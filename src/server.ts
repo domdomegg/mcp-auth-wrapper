@@ -158,7 +158,7 @@ export const createApp = (
 	// (X-Forwarded-For / trust proxy issues), and it's unnecessary here because all
 	// auth codes and tokens are AES-256-GCM sealed blobs with fresh random IVs and
 	// mandatory PKCE — brute forcing is cryptographically infeasible.
-	const noRateLimit = { rateLimit: false as const };
+	const noRateLimit = {rateLimit: false as const};
 	app.use(mcpAuthRouter({
 		provider,
 		issuerUrl,
