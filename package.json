@@ -1,15 +1,18 @@
 {
-  "name": "typescript-library-template",
+  "name": "mcp-auth-wrapper",
   "version": "0.0.0",
-  "description": "Template for creating TypeScript libraries",
+  "description": "Wrap any stdio MCP server with per-user auth, exposing it as a streamable HTTP endpoint.",
   "license": "MIT",
   "author": "Adam Jones (domdomegg)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/domdomegg/typescript-library-template.git"
+    "url": "https://github.com/domdomegg/mcp-auth-wrapper.git"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "mcp-auth-wrapper": "dist/index.js"
+  },
   "files": [
     "dist"
   ],
@@ -23,10 +26,17 @@
   },
   "devDependencies": {
     "@tsconfig/node-lts": "^22.0.2",
+    "@types/express": "^5.0.6",
     "eslint": "^9.32.0",
     "eslint-config-domdomegg": "^2.0.9",
     "tsconfig-domdomegg": "^1.0.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "zod": "^4.3.6"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "express": "^5.2.1",
+    "jose": "^6.1.3"
   }
 }
