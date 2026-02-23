@@ -108,7 +108,6 @@ export const createApp = (
 	store: Store,
 ): express.Express => {
 	const app = express();
-	app.set('trust proxy', 1);
 	const baseUrl = config.issuerUrl ?? `http://localhost:${config.port ?? 3000}`;
 	const issuerUrl = new URL(baseUrl);
 	const mcpUrl = new URL('/mcp', issuerUrl);
@@ -154,12 +153,21 @@ export const createApp = (
 		});
 	});
 
-	// OAuth routes (discovery, token, register, revoke — /authorize is handled above)
+	// OAuth routes (discovery, token, register, revoke — /authorize is handled above).
+	// Rate limiting is disabled: the MCP SDK defaults conflict with reverse proxies
+	// (X-Forwarded-For / trust proxy issues), and it's unnecessary here because all
+	// auth codes and tokens are AES-256-GCM sealed blobs with fresh random IVs and
+	// mandatory PKCE — brute forcing is cryptographically infeasible.
+	const noRateLimit = { rateLimit: false as const };
 	app.use(mcpAuthRouter({
 		provider,
 		issuerUrl,
 		baseUrl: issuerUrl,
 		resourceServerUrl: mcpUrl,
+		tokenOptions: noRateLimit,
+		authorizationOptions: noRateLimit,
+		clientRegistrationOptions: noRateLimit,
+		revocationOptions: noRateLimit,
 	}));
 
 	// Upstream OIDC callback
