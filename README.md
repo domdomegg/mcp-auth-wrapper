@@ -1,45 +1,12 @@
 # mcp-auth-wrapper
 
-> **Note:** This project is experimental, unpublished, and a work in progress. APIs and configuration may change without notice.
+> Turn any local [MCP server](https://modelcontextprotocol.io/) into a multi-tenant hosted remote MCP, with per-user credentials. Works with Claude.ai, Claude Code and any other MCP client that supports remote servers.
 
-Most MCP servers run over stdio and assume a single user. This wrapper turns any env-var-configured stdio MCP server into a multi-user streamable HTTP endpoint with full OAuth 2.1 support. Each user gets their own server process with their own environment variables (e.g. API keys), and authentication is delegated to an upstream OIDC provider.
+Connecting AI agents to tools can help you and your team be more productive. [MCP servers](https://modelcontextprotocol.io/docs/learn/server-concepts) are a great way to do this — but many of them only run locally and require per-user setup (like API keys) that can be difficult for non-technical users. What if you want your whole team to use one, each with their own credentials?
 
-This means you can self-host MCP servers and share them across multiple users or devices, with each user's credentials kept isolated. It works with Claude Code and any other MCP client that supports OAuth discovery.
+mcp-auth-wrapper lets you do exactly this: it hosts any MCP server for multiple users with auth and configuration. Your team can login via your existing identity provider (Google Workspace, Microsoft Entra ID, Okta, Auth0, Keycloak, etc.), provide their per-user config in a simple form interface, and mcp-auth-wrapper will automatically spin up the MCP for each user.
 
-## How it works
-
-```
-Client (Claude Code)     Wrapper                 Upstream OIDC (e.g. Keycloak)
-    |                       |                        |
-    |-- GET /mcp ---------->|                        |
-    |<-- 401 + metadata ----|                        |
-    |-- POST /register ---->|                        |
-    |<-- client_id ---------|                        |
-    |-- GET /authorize ---->|                        |
-    |                       |-- redirect to -------->|
-    |                       |   upstream /authorize  |
-    |                       |                  user logs in
-    |                       |<-- GET /callback ------|
-    |                       |   (upstream code)      |
-    |                       |                        |
-    |                       | exchange code, get userId
-    |                       |                        |
-    |<-- redirect + code ---|                        |
-    |-- POST /token ------->|                        |
-    |<-- access_token ------|                        |
-    |-- POST /mcp --------->| (proxied to stdio)     |
-```
-
-1. The client discovers the wrapper's OAuth endpoints via `/.well-known/oauth-authorization-server`
-2. The wrapper redirects to the upstream OIDC provider for login
-3. After login, the upstream redirects back to the wrapper's `/callback`
-4. The wrapper exchanges the upstream code for an ID token, extracts the user identity
-5. If the user is new and `envPerUser` params are configured, the wrapper shows a form to collect them (e.g. API keys)
-6. The wrapper issues its own authorization code and redirects the client
-7. The client exchanges the code for an access token
-8. Subsequent MCP requests include the access token and are proxied to the user's stdio process
-
-A **reconfigure** tool is automatically injected into the MCP server's tool list, letting users update their parameters (e.g. rotate an API key) without re-authenticating.
+For those interested in the technical details, mcp-auth-wrapper wraps stdio MCP servers that accept environment variables as [streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) servers with [OAuth 2.1](https://oauth.net/2.1/) / [OpenID Connect](https://openid.net/developers/how-connect-works/). By default, user credentials are held only in memory but can be persisted to sqlite - it is recommended to use an encrypted volume for storage if doing this. mcp-auth-wrapper is horizontally scalable for larger deployments, and can be run easily with npx, Docker, Docker Compose or Kubernetes.
 
 ## Usage
 
@@ -52,7 +19,7 @@ MCP_AUTH_WRAPPER_CONFIG='{
 }' npx mcp-auth-wrapper
 ```
 
-This will spin up a streamable HTTP MCP server on localhost:3000.
+This starts an HTTP MCP server on localhost:3000. When a user connects, they'll be redirected to your login provider. After logging in, if you've configured per-user environment variables (like API keys), they'll see a form to enter them. Then they're connected to their own MCP server process.
 
 <details>
 <summary>Other configuration methods</summary>
@@ -75,7 +42,7 @@ npx mcp-auth-wrapper
 
 Only `command` and `auth.issuer` are required. Everything else has sensible defaults.
 
-A full example looks like:
+A full example:
 
 ```json
 {
@@ -101,31 +68,91 @@ A full example looks like:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `command` | Yes | Command and arguments to spawn the stdio MCP server, as an array. |
-| `auth.issuer` | Yes | OIDC issuer URL. Endpoints are auto-discovered via `/.well-known/openid-configuration`. |
-| `auth.clientId` | No | OAuth client ID registered with the upstream provider. Defaults to `"mcp-auth-wrapper"`. |
-| `auth.clientSecret` | No | OAuth client secret. Omit for public clients. |
-| `auth.scopes` | No | Scopes to request. Defaults to `["openid"]`. |
-| `auth.userClaim` | No | Claim from the upstream ID token to use as the user identifier. Defaults to `"sub"`. |
+| `command` | Yes | Command to spawn the MCP server, as an array (e.g. `["npx", "-y", "some-server"]`). |
+| `auth.issuer` | Yes | Your login provider's URL. Must support [OpenID Connect discovery](https://openid.net/specs/openid-connect-discovery-1_0.html). |
+| `auth.clientId` | No | Client ID registered with your login provider. Defaults to `"mcp-auth-wrapper"`. |
+| `auth.clientSecret` | No | Client secret. Omit for public clients. |
+| `auth.scopes` | No | Scopes to request during login. Defaults to `["openid"]`. |
+| `auth.userClaim` | No | Which field from the login token identifies the user. Defaults to `"sub"`. |
 | `envBase` | No | Environment variables shared across all user processes. |
-| `envPerUser` | No | Per-user env vars to collect during auth. Each has `name`, `label`, optional `description` and `secret`. |
-| `storage` | No | `"memory"` (default), a file path for SQLite, or an inline user map object. See [Storage modes](#storage-modes). |
+| `envPerUser` | No | Per-user env vars to collect during first login (e.g. API keys). Each has `name`, `label`, optional `description` and `secret`. |
+| `storage` | No | Where to store user params: `"memory"` (default), a SQLite file path, or an inline object (see [below](#other-examples)). |
 | `port` | No | Port to listen on. Defaults to `3000`. |
 | `host` | No | Host to bind to. Defaults to `0.0.0.0`. |
-| `issuerUrl` | No | Public URL of this wrapper (for OAuth metadata and upstream callback). Auto-detected if not set. Required when behind a reverse proxy. |
-| `secret` | No | Signing key for tokens and OAuth state. A random key is generated at startup if not set. Set a fixed value to survive restarts and for horizontal scaling. |
+| `issuerUrl` | No | Public URL of this server. Required when behind a reverse proxy. |
+| `secret` | No | Signing key for tokens. Random if not set. Set a fixed value to survive restarts. |
 
-### Storage modes
+Users can update their per-user env vars at any time via a **reconfigure** tool that's automatically added to the MCP server's tool list.
 
-- **`"memory"`** (default) — User params stored in-memory. Dynamic registration allowed, but data is lost on restart.
-- **`"/path/to/db.sqlite"`** — User params persisted to a SQLite file. Dynamic registration allowed, survives restarts.
-- **`{...}` (inline object)** — User params hardcoded in config. No dynamic registration — all users must be pre-configured.
+<details>
+<summary>Advanced: scaling and persistence</summary>
 
-The entire auth and session layer is stateless — authorization codes, access tokens, refresh tokens, and MCP sessions carry no server-side state. All OAuth tokens are self-contained encrypted blobs (AES-256-GCM), and each MCP request gets a fresh transport with no session tracking. In-flight auth flows and existing tokens survive restarts if `secret` is set.
+All auth state (tokens, sessions, in-flight logins) is stateless — tokens are self-contained encrypted blobs and each request gets a fresh transport. Nothing is stored server-side except user params (in `storage`) and the process pool (one subprocess per user).
 
-> **Horizontal scaling:** The only per-instance state is the process pool (one stdio subprocess per user). If a user hits a different instance, it simply spawns a new subprocess — this is transparent and correct. Set `secret` to the same value across instances and use SQLite on a shared filesystem (or inline storage) for user params, and you can run multiple instances behind a load balancer.
+To survive restarts, set `secret` to a fixed value and use a SQLite file or inline storage for user params.
 
-### Auth server examples
+To run multiple instances behind a load balancer, set `secret` to the same value across instances and point `storage` at a shared SQLite file (or use inline storage). If a user hits a different instance, it just spawns a new subprocess — this is transparent for stateless MCPs.
+
+</details>
+
+### Login provider examples
+
+<details>
+<summary>Google Workspace</summary>
+
+```json
+{
+  "command": ["npx", "-y", "some-mcp-server"],
+  "auth": {
+    "issuer": "https://accounts.google.com",
+    "clientId": "...",
+    "clientSecret": "..."
+  },
+  "envPerUser": [{"name": "API_KEY", "label": "API Key", "secret": true}]
+}
+```
+
+Create OAuth 2.0 credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Choose "Web application", add `https://<wrapper-host>/callback` as an authorized redirect URI. To restrict access to your organization, configure the OAuth consent screen as "Internal".
+
+</details>
+
+<details>
+<summary>Microsoft Entra ID</summary>
+
+```json
+{
+  "command": ["npx", "-y", "some-mcp-server"],
+  "auth": {
+    "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+    "clientId": "...",
+    "clientSecret": "..."
+  },
+  "envPerUser": [{"name": "API_KEY", "label": "API Key", "secret": true}]
+}
+```
+
+Register an application in the [Azure portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps). Add `https://<wrapper-host>/callback` as a redirect URI under "Web". Create a client secret under "Certificates & secrets". Replace `<tenant-id>` with your directory (tenant) ID.
+
+</details>
+
+<details>
+<summary>Okta</summary>
+
+```json
+{
+  "command": ["npx", "-y", "some-mcp-server"],
+  "auth": {
+    "issuer": "https://your-org.okta.com",
+    "clientId": "...",
+    "clientSecret": "..."
+  },
+  "envPerUser": [{"name": "API_KEY", "label": "API Key", "secret": true}]
+}
+```
+
+Create a Web Application in Okta. Set the sign-in redirect URI to `https://<wrapper-host>/callback`. The issuer URL is your Okta org URL (or a custom authorization server URL if you use one).
+
+</details>
 
 <details>
 <summary>Keycloak</summary>
@@ -141,7 +168,7 @@ The entire auth and session layer is stateless — authorization codes, access t
 }
 ```
 
-Create an OpenID Connect client in your Keycloak realm. Set the redirect URI to `https://<wrapper-host>/callback`. Users are identified by `sub` (Keycloak user ID) by default. Set `auth.userClaim` to `preferred_username` to match by username instead.
+Create an OpenID Connect client in your Keycloak realm with client ID `mcp-auth-wrapper` (or set `auth.clientId` to match). Set the redirect URI to `https://<wrapper-host>/callback`. Users are identified by `sub` (Keycloak user ID) by default. Set `auth.userClaim` to `preferred_username` to match by username instead.
 
 </details>
 
@@ -160,7 +187,7 @@ Create an OpenID Connect client in your Keycloak realm. Set the redirect URI to 
 }
 ```
 
-Create a Regular Web Application in Auth0. Add `https://<wrapper-host>/callback` as an allowed callback URL. The `sub` claim in Auth0 is typically prefixed with the connection type (e.g. `auth0|abc123`).
+Create a Regular Web Application in Auth0. Add `https://<wrapper-host>/callback` as an allowed callback URL. Set `auth.clientId` to the Auth0 application's client ID. The `sub` claim in Auth0 is typically prefixed with the connection type (e.g. `auth0|abc123`).
 
 </details>
 
@@ -179,35 +206,35 @@ Create a Regular Web Application in Auth0. Add `https://<wrapper-host>/callback`
 }
 ```
 
-Create an OAuth2/OpenID Provider in Authentik. Set the redirect URI to `https://<wrapper-host>/callback`.
+Create an OAuth2/OpenID Provider in Authentik with client ID `mcp-auth-wrapper` (or set `auth.clientId` to match). Set the redirect URI to `https://<wrapper-host>/callback`.
 
 </details>
 
-<!--
-
-NB: this does NOT currently work, because HA is not OIDC compliant. Am working on a wrapper for this!
-
 <details>
-<summary>Home Assistant</summary>
+<summary>Home Assistant (via hass-oidc-provider)</summary>
+
+Home Assistant doesn't natively support OpenID Connect. Use [hass-oidc-provider](https://github.com/domdomegg/hass-oidc-provider) to bridge the gap — it runs alongside Home Assistant and adds the missing pieces.
 
 ```json
 {
   "command": ["npx", "-y", "some-mcp-server"],
   "auth": {
-    "issuer": "https://ha.example.com"
+    "issuer": "https://hass-oidc-provider.example.com"
   },
   "envPerUser": [{"name": "API_KEY", "label": "API Key", "secret": true}]
 }
 ```
 
-Home Assistant's `sub` claim is the HA user ID (not the username). No `clientId` or `clientSecret` needed.
+Point `auth.issuer` at your hass-oidc-provider instance (not Home Assistant directly). The `sub` claim is the Home Assistant user ID. No `clientId` or `clientSecret` needed.
 
-</details> -->
+</details>
+
+### Other examples
 
 <details>
-<summary>Inline users (no dynamic registration)</summary>
+<summary>Inline users (no self-registration)</summary>
 
-If you don't want users to self-register params, hardcode them in the `storage` field:
+By default, users enter their own credentials (e.g. API keys) via a form during first login, and can update them later via the reconfigure tool. If you'd rather hardcode all users upfront, use an inline `storage` object:
 
 ```json
 {
@@ -223,13 +250,9 @@ If you don't want users to self-register params, hardcode them in the `storage` 
 }
 ```
 
-Users are matched by the `auth.userClaim` (default: `sub`) from the upstream ID token.
+Users are matched by the `auth.userClaim` (default: `sub`) from the login token. Inline storage is read-only — users cannot update their own credentials.
 
 </details>
-
-## Future work
-
-**OIDC upstream proxy** — A standalone utility that wraps any OAuth server (that doesn't support OIDC discovery) and exposes a standard `/.well-known/openid-configuration` endpoint. This would let the wrapper work with non-OIDC auth providers. It would accept upstream authorization/token/JWKS endpoint URLs as config, serve discovery metadata, and proxy auth requests through.
 
 ## Contributing
 
