@@ -108,6 +108,7 @@ export const createApp = (
 	store: Store,
 ): express.Express => {
 	const app = express();
+	app.set('trust proxy', 1);
 	const baseUrl = config.issuerUrl ?? `http://localhost:${config.port ?? 3000}`;
 	const issuerUrl = new URL(baseUrl);
 	const mcpUrl = new URL('/mcp', issuerUrl);
