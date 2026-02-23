@@ -1,6 +1,6 @@
 {
   "name": "mcp-auth-wrapper",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Wrap any stdio MCP server with per-user auth, exposing it as a streamable HTTP endpoint.",
   "license": "MIT",
   "author": "Adam Jones (domdomegg)",
