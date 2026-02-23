@@ -38,6 +38,15 @@ npx mcp-auth-wrapper
 
 </details>
 
+<details>
+<summary>Running with Docker</summary>
+
+```bash
+docker run -e 'MCP_AUTH_WRAPPER_CONFIG={"command":["npx","-y","airtable-mcp-server"],"auth":{"issuer":"https://auth.example.com"}}' -p 3000:3000 ghcr.io/domdomegg/mcp-auth-wrapper
+```
+
+</details>
+
 ### Config
 
 Only `command` and `auth.issuer` are required. Everything else has sensible defaults.
@@ -272,4 +281,4 @@ To release:
 
 1. Use `npm version <major | minor | patch>` to bump the version
 2. Run `git push --follow-tags` to push with tags
-3. Wait for GitHub Actions to publish to the NPM registry.
+3. Wait for GitHub Actions to publish to the NPM registry and GHCR (Docker).
