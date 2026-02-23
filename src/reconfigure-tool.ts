@@ -29,12 +29,14 @@ export const handleReconfigureCall = (
 	const knownNames = new Set(envPerUser.map((p) => p.name));
 	const unknownKeys = Object.keys(args).filter((k) => !knownNames.has(k));
 	if (unknownKeys.length > 0) {
+		const result = {
+			error: `Unknown parameter(s): ${unknownKeys.join(', ')}`,
+			validParameters: envPerUser.map((p) => p.name),
+		};
 		return {
 			isError: true,
-			content: [{
-				type: 'text' as const,
-				text: `Unknown parameter(s): ${unknownKeys.join(', ')}. Valid parameters: ${envPerUser.map((p) => p.name).join(', ')}`,
-			}],
+			content: [{type: 'text' as const, text: JSON.stringify(result, null, 2)}],
+			structuredContent: result,
 		};
 	}
 
@@ -52,21 +54,26 @@ export const handleReconfigureCall = (
 		try {
 			store.upsertUser(userId, params);
 			pool.invalidateUser(userId);
+			const result = {
+				status: 'updated',
+				message: 'Configuration updated. Your MCP server will use the new settings on the next request.',
+			};
 			return {
-				content: [{
-					type: 'text' as const,
-					text: 'Configuration updated. Your MCP server will use the new settings on the next request.',
-				}],
+				content: [{type: 'text' as const, text: JSON.stringify(result, null, 2)}],
+				structuredContent: result,
 			};
 		} catch {
 			// Storage is read-only (inline config) — fall through to URL mode
 		}
 	}
 
+	const result = {
+		status: 'reconfigure',
+		url: reconfigureUrl,
+		message: 'To update your configuration, open this URL in your browser. After saving changes, your MCP server process will restart with the new settings.',
+	};
 	return {
-		content: [{
-			type: 'text' as const,
-			text: `To update your configuration, open this URL in your browser:\n\n${reconfigureUrl}\n\nAfter saving changes, your MCP server process will restart with the new settings.`,
-		}],
+		content: [{type: 'text' as const, text: JSON.stringify(result, null, 2)}],
+		structuredContent: result,
 	};
 };

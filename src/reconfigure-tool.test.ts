@@ -41,20 +41,20 @@ describe('handleReconfigureCall', () => {
 	test('returns URL when called with no arguments', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({}, deps);
-		expect(result.content[0].text).toContain(reconfigureUrl);
+		expect(result.structuredContent).toEqual({status: 'reconfigure', url: reconfigureUrl, message: expect.any(String)});
 		expect(result).not.toHaveProperty('isError');
 	});
 
 	test('returns URL when called with empty string values', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: '', REGION: ''}, deps);
-		expect(result.content[0].text).toContain(reconfigureUrl);
+		expect(result.structuredContent).toHaveProperty('url', reconfigureUrl);
 	});
 
 	test('updates store and invalidates user on valid args', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: 'my-key', REGION: 'us-east'}, deps);
-		expect(result.content[0].text).toContain('Configuration updated');
+		expect(result.structuredContent).toEqual({status: 'updated', message: expect.any(String)});
 		expect(deps.mocks.store.upsertUser).toHaveBeenCalledWith('adam', {API_KEY: 'my-key', REGION: 'us-east'});
 		expect(deps.mocks.pool.invalidateUser).toHaveBeenCalledWith('adam');
 	});
@@ -62,14 +62,14 @@ describe('handleReconfigureCall', () => {
 	test('updates with partial args (only some params provided)', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: 'my-key'}, deps);
-		expect(result.content[0].text).toContain('Configuration updated');
+		expect(result.structuredContent).toHaveProperty('status', 'updated');
 		expect(deps.mocks.store.upsertUser).toHaveBeenCalledWith('adam', {API_KEY: 'my-key'});
 	});
 
 	test('falls back to URL mode when storage is read-only', () => {
 		const deps = makeDeps({upsertThrows: true});
 		const result = handleReconfigureCall({API_KEY: 'my-key'}, deps);
-		expect(result.content[0].text).toContain(reconfigureUrl);
+		expect(result.structuredContent).toHaveProperty('url', reconfigureUrl);
 		expect(result).not.toHaveProperty('isError');
 	});
 
@@ -77,15 +77,17 @@ describe('handleReconfigureCall', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({BOGUS: 'value'}, deps);
 		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain('Unknown parameter(s): BOGUS');
-		expect(result.content[0].text).toContain('Valid parameters: API_KEY, REGION');
+		expect(result.structuredContent).toEqual({
+			error: 'Unknown parameter(s): BOGUS',
+			validParameters: ['API_KEY', 'REGION'],
+		});
 	});
 
 	test('returns error when mix of known and unknown arguments', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: 'ok', NOPE: 'bad'}, deps);
 		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain('NOPE');
+		expect(result.structuredContent).toHaveProperty('error', 'Unknown parameter(s): NOPE');
 		expect(deps.mocks.store.upsertUser).not.toHaveBeenCalled();
 	});
 });
