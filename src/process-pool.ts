@@ -52,9 +52,11 @@ export class ProcessPool {
 		transport.onclose = () => {
 			this.processes.delete(userId);
 		};
+
 		transport.onerror = () => {
 			this.processes.delete(userId);
 		};
+
 		return client;
 	}
 

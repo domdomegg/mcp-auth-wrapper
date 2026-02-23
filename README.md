@@ -1,10 +1,12 @@
 # mcp-auth-wrapper
 
-> Turn any local [MCP server](https://modelcontextprotocol.io/) into a multi-tenant hosted remote MCP, with per-user credentials. Works with Claude.ai, Claude Code and any other MCP client that supports remote servers.
+> Turn any local [MCP server](https://modelcontextprotocol.io/) into a multi-tenant hosted remote MCP, with per-user credentials.
 
 Connecting AI agents to tools can help you and your team be more productive. [MCP servers](https://modelcontextprotocol.io/docs/learn/server-concepts) are a great way to do this — but many of them only run locally and require per-user setup (like API keys) that can be difficult for non-technical users. What if you want your whole team to use one, each with their own credentials?
 
 mcp-auth-wrapper lets you do exactly this: it hosts any MCP server for multiple users with auth and configuration. Your team can login via your existing identity provider (Google Workspace, Microsoft Entra ID, Okta, Auth0, Keycloak, etc.), provide their per-user config in a simple form interface, and mcp-auth-wrapper will automatically spin up the MCP for each user.
+
+mcp-auth-wrapper works with Claude.ai, Claude Code and any other MCP client that supports remote servers.
 
 For those interested in the technical details, mcp-auth-wrapper wraps stdio MCP servers that accept environment variables as [streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) servers with [OAuth 2.1](https://oauth.net/2.1/) / [OpenID Connect](https://openid.net/developers/how-connect-works/). By default, user credentials are held only in memory but can be persisted to sqlite - it is recommended to use an encrypted volume for storage if doing this. mcp-auth-wrapper is horizontally scalable for larger deployments, and can be run easily with npx, Docker, Docker Compose or Kubernetes.
 

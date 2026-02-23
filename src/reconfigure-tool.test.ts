@@ -1,4 +1,6 @@
-import {describe, expect, test, vi} from 'vitest';
+import {
+	describe, expect, test, vi,
+} from 'vitest';
 import {handleReconfigureCall, getReconfigureTool, RECONFIGURE_TOOL_NAME} from './reconfigure-tool.js';
 import type {EnvParam} from './types.js';
 
@@ -12,13 +14,15 @@ const reconfigureUrl = 'http://localhost:3000/reconfigure?token=abc';
 const makeDeps = (overrides: {upsertThrows?: boolean} = {}) => {
 	const store = {
 		upsertUser: overrides.upsertThrows
-			? vi.fn(() => { throw new Error('read-only'); })
+			? vi.fn(() => {
+				throw new Error('read-only');
+			})
 			: vi.fn(),
 	};
 	const pool = {invalidateUser: vi.fn()};
 	return {
-		store: store as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-		pool: pool as any, // eslint-disable-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+		store: store as any,
+		pool: pool as any,
 		userId: 'adam',
 		envPerUser,
 		reconfigureUrl,

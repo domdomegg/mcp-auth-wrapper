@@ -1,4 +1,6 @@
-import {createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID} from 'node:crypto';
+import {
+	createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID,
+} from 'node:crypto';
 import type {Response} from 'express';
 import type {OAuthClientInformationFull, OAuthTokenRevocationRequest, OAuthTokens} from '@modelcontextprotocol/sdk/shared/auth.js';
 import type {AuthorizationParams, OAuthServerProvider} from '@modelcontextprotocol/sdk/server/auth/provider.js';
@@ -256,7 +258,8 @@ export class WrapperOAuthProvider implements OAuthServerProvider {
 		};
 	}
 
-	async revokeToken(_client: OAuthClientInformationFull, _request: OAuthTokenRevocationRequest): Promise<void> {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by OAuthServerProvider interface
+	async revokeToken(client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {
 		// Tokens are stateless sealed blobs — revocation is a no-op.
 		// Tokens remain valid until their TTL expires.
 	}
