@@ -18,7 +18,7 @@ Set `MCP_AUTH_WRAPPER_CONFIG` to a JSON config object and run:
 MCP_AUTH_WRAPPER_CONFIG='{
   "command": ["npx", "-y", "airtable-mcp-server"],
   "auth": {"issuer": "https://auth.example.com"}
-}' npx mcp-auth-wrapper
+}' npx -y mcp-auth-wrapper
 ```
 
 This starts an HTTP MCP server on localhost:3000. When a user connects, they'll be redirected to your login provider. After logging in, if you've configured per-user environment variables (like API keys), they'll see a form to enter them. Then they're connected to their own MCP server process.
@@ -29,13 +29,13 @@ This starts an HTTP MCP server on localhost:3000. When a user connects, they'll 
 The env var can also point to a file path:
 
 ```bash
-MCP_AUTH_WRAPPER_CONFIG=/path/to/config.json npx mcp-auth-wrapper
+MCP_AUTH_WRAPPER_CONFIG=/path/to/config.json npx -y mcp-auth-wrapper
 ```
 
 Or create `mcp-auth-wrapper.config.json` in the working directory — it's picked up automatically:
 
 ```bash
-npx mcp-auth-wrapper
+npx -y mcp-auth-wrapper
 ```
 
 </details>
