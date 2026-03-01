@@ -12,6 +12,7 @@ export const renderParamsForm = (
 	existingValues?: Record<string, string>,
 ): string => `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="mcp-auth-wrapper">
 <title>Configure MCP Server</title>
 <style>body{font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 20px}
 label{display:block;margin:16px 0 4px;font-weight:600}
@@ -36,6 +37,7 @@ export const renderReconfigurePage = (
 	saved?: boolean,
 ): string => `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="mcp-auth-wrapper">
 <title>Reconfigure MCP Server</title>
 <style>body{font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 20px}
 label{display:block;margin:16px 0 4px;font-weight:600}
