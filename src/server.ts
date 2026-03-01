@@ -200,11 +200,14 @@ export const createApp = (
 			const callbackUrl = `${baseUrl}/callback`;
 			const {userId} = await oidcClient.exchangeCode(code, callbackUrl, pending.upstreamCodeVerifier);
 
-			// Check if user needs params
+			// Show the params form if envPerUser is configured and storage is writable,
+			// so users can review/update their configuration on re-auth (e.g. via a Reconfigure flow).
+			// Skip if storage is inline (read-only) and user already has all params.
 			const existingParams = store.getUser(userId);
+			const isInlineStorage = typeof config.storage === 'object';
 			const needsParams = config.envPerUser
 				&& config.envPerUser.length > 0
-				&& (!existingParams || config.envPerUser.some((p) => !existingParams[p.name]));
+				&& !(isInlineStorage && existingParams && config.envPerUser.every((p) => existingParams[p.name]));
 
 			if (needsParams) {
 				// Re-seal with userId attached so /params can use it
