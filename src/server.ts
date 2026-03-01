@@ -153,6 +153,16 @@ export const createApp = (
 		});
 	});
 
+	// Compatibility: many clients probe /.well-known/oauth-protected-resource at the root,
+	// but RFC 9728 says the path should be /.well-known/oauth-protected-resource/mcp when
+	// the resource URL is /mcp. Serve the metadata at the root path too for broad compat.
+	app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+		res.json({
+			resource: mcpUrl.href,
+			authorization_servers: [issuerUrl.href],
+		});
+	});
+
 	// OAuth routes (discovery, token, register, revoke — /authorize is handled above).
 	// Rate limiting is disabled: the MCP SDK defaults conflict with reverse proxies
 	// (X-Forwarded-For / trust proxy issues), and it's unnecessary here because all
