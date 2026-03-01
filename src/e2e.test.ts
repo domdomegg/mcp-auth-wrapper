@@ -140,29 +140,40 @@ beforeAll(async () => {
 		envPerUser: [{name: 'TEST_USER', label: 'Test User'}, {name: 'SECRET_KEY', label: 'Secret Key'}],
 	};
 
+	// Reserve a port by briefly listening, then close so createApp can use it
+	const tempServer = createServer();
+	await new Promise<void>((resolve) => {
+		tempServer.listen(0, '127.0.0.1', () => {
+			resolve();
+		});
+	});
+	const tempAddr = tempServer.address();
+	if (!tempAddr || typeof tempAddr === 'string') {
+		throw new Error('Failed to reserve port');
+	}
+
+	const {port} = tempAddr;
+	await new Promise<void>((resolve) => {
+		tempServer.close(() => {
+			resolve();
+		});
+	});
+
+	config.issuerUrl = `http://127.0.0.1:${port}`;
+	wrapperUrl = config.issuerUrl;
+
 	store = new Store(config);
 	const oidcClient = new OidcClient(config.auth);
 	pool = new ProcessPool('npx', ['tsx', stubServerPath], {BASE_VAR: 'shared'}, store);
 	const provider = new WrapperOAuthProvider(oidcClient, config);
 	const app = createApp(config, pool, provider, oidcClient, store);
 
-	// Need issuerUrl set to the wrapper's address
 	wrapperServer = createServer(app);
 	await new Promise<void>((resolve) => {
-		wrapperServer.listen(0, '127.0.0.1', () => {
+		wrapperServer.listen(port, '127.0.0.1', () => {
 			resolve();
 		});
 	});
-
-	const wrapperAddr = wrapperServer.address();
-	if (!wrapperAddr || typeof wrapperAddr === 'string') {
-		throw new Error('Failed to start wrapper');
-	}
-
-	wrapperUrl = `http://127.0.0.1:${wrapperAddr.port}`;
-
-	// Update config issuerUrl so the provider generates correct URLs
-	config.issuerUrl = wrapperUrl;
 }, 30_000);
 
 afterAll(async () => {
@@ -221,7 +232,7 @@ const getAccessToken = async (): Promise<string> => {
 	authorizeUrl.searchParams.set('code_challenge_method', 'S256');
 	authorizeUrl.searchParams.set('state', 'test-state');
 
-	// Follow the redirect chain: wrapper → upstream → wrapper/callback → redirect back
+	// Follow the redirect chain: wrapper → upstream → wrapper/callback → params form → redirect back
 	let res = await fetch(authorizeUrl.toString(), {redirect: 'manual'});
 	expect(res.status).toBe(302);
 
@@ -229,6 +240,27 @@ const getAccessToken = async (): Promise<string> => {
 	let location = res.headers.get('location')!;
 	while (location && !location.startsWith('http://localhost:9999')) {
 		res = await fetch(location, {redirect: 'manual'}); // eslint-disable-line no-await-in-loop
+		// If we landed on the params form (200 HTML), submit it to continue the flow
+		if (res.status === 200 && !res.headers.get('location')) {
+			const html = await res.text(); // eslint-disable-line no-await-in-loop
+			const sessionMatch = /name="session"\s+value="([^"]+)"/.exec(html);
+			if (sessionMatch) {
+				const formBody = new URLSearchParams({session: sessionMatch[1]!});
+				// Submit existing param values from the form
+				for (const match of html.matchAll(/name="((?!session)[^"]+)"[^>]*value="([^"]*)"/g)) {
+					formBody.set(match[1]!, match[2]!);
+				}
+
+				const paramsUrl = new URL('/params', location.startsWith('http') ? location : wrapperUrl);
+				res = await fetch(paramsUrl.toString(), { // eslint-disable-line no-await-in-loop
+					method: 'POST',
+					headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+					body: formBody.toString(),
+					redirect: 'manual',
+				});
+			}
+		}
+
 		location = res.headers.get('location') ?? '';
 	}
 
