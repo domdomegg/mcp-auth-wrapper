@@ -49,6 +49,29 @@ docker run -e 'MCP_AUTH_WRAPPER_CONFIG={"command":["npx","-y","airtable-mcp-serv
 
 </details>
 
+<details>
+<summary>Running on Kubernetes</summary>
+
+The Docker image runs as the non-root `node` user (uid 1000). If you use a PersistentVolumeClaim for SQLite storage, the volume mount will be owned by root by default, so the container won't be able to write to it. Add `fsGroup: 1000` to the pod's security context to fix this:
+
+```yaml
+spec:
+  securityContext:
+    fsGroup: 1000
+  containers:
+    - name: mcp-auth-wrapper
+      image: ghcr.io/domdomegg/mcp-auth-wrapper
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: mcp-auth-wrapper-data
+```
+
+</details>
+
 ### Config
 
 Only `command` and `auth.issuer` are required. Everything else has sensible defaults.
