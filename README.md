@@ -70,8 +70,6 @@ spec:
         claimName: mcp-auth-wrapper-data
 ```
 
-See [bluedotimpact/bluedot#2253](https://github.com/bluedotimpact/bluedot/pull/2253) for a real-world example.
-
 </details>
 
 ### Config
