@@ -28,8 +28,8 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .desc { font-size: 11px; color: var(--subtle); margin-bottom: 4px; }
   input { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
   input:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
-  button { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); }
-  button:hover { background: var(--btn-hover); }
+  button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
+  button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
   footer a { color: var(--footer); text-decoration: none; }
   footer a:hover { color: var(--footer-hover); border-bottom: 1px solid var(--footer-hover); }`;
@@ -60,6 +60,15 @@ export const renderParamsForm = (
 ${paramFields(params, existingValues)}
 <button type="submit">save &amp; continue</button>
 </form>
+${footerHtml}
+</body></html>`;
+
+export const renderLandingPage = (installUrl: string, showSignIn: boolean): string => `${pageHead('mcp-auth-wrapper')}
+<body>
+<h1>mcp-auth-wrapper</h1>
+<p class="msg" style="margin-bottom:16px">To connect, add this server to your MCP client — you'll be prompted to log in and enter any required credentials.</p>
+<a class="btn" style="margin-top:0" href="${escapeHtml(installUrl)}">install in client</a>
+${showSignIn ? '<p class="msg" style="margin-top:48px;margin-bottom:0">Already connected? <a href="/login" style="color:var(--fg)">Sign in</a> to update your configuration.</p>' : ''}
 ${footerHtml}
 </body></html>`;
 

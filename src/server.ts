@@ -20,7 +20,7 @@ import type {OidcClient} from './auth.js';
 import type {Store} from './store.js';
 import type {ProcessPool} from './process-pool.js';
 import type {WrapperConfig} from './types.js';
-import {renderParamsForm, renderReconfigurePage} from './pages.js';
+import {renderLandingPage, renderParamsForm, renderReconfigurePage} from './pages.js';
 import {RECONFIGURE_TOOL_NAME, getReconfigureTool, handleReconfigureCall} from './reconfigure-tool.js';
 
 /** Safely extract a string from a parsed form body (may be string, array, or undefined) */
@@ -226,6 +226,63 @@ export const createApp = (
 			res.redirect(redirectUrl);
 		} catch (err) {
 			console.error('Callback error:', err);
+			res.status(500).send('Authentication failed');
+		}
+	});
+
+	// Landing page
+	const hasEnvPerUser = (config.envPerUser ?? []).length > 0;
+	const isInlineStorage = typeof config.storage === 'object';
+	const showSignIn = hasEnvPerUser && !isInlineStorage;
+
+	app.get('/', (_req, res) => {
+		const installUrl = `https://adamjones.me/install-mcp/?url=${encodeURIComponent(mcpUrl.href)}`;
+		res.send(renderLandingPage(installUrl, showSignIn));
+	});
+
+	// Web login: /login → upstream IDP → /login/callback → /reconfigure
+	app.get('/login', (_req, res) => {
+		if (!showSignIn) {
+			res.status(404).send('Not found');
+			return;
+		}
+
+		const {codeVerifier, codeChallenge} = oidcClient.generateCodeVerifierAndChallenge();
+		const state = provider.sealWebLogin(codeVerifier);
+		const callbackUrl = `${baseUrl}/login/callback`;
+
+		oidcClient.buildAuthorizeUrl({redirectUri: callbackUrl, state, codeChallenge})
+			.then((url) => {
+				res.redirect(url);
+			})
+			.catch((err: unknown) => {
+				console.error('Login error:', err);
+				res.status(500).send('Failed to initiate login');
+			});
+	});
+
+	app.get('/login/callback', async (req, res) => {
+		try {
+			const code = getString(req.query.code);
+			const state = getString(req.query.state);
+			if (!code || !state) {
+				res.status(400).send('Missing code or state parameter');
+				return;
+			}
+
+			const payload = provider.unsealWebLogin(state);
+			if (!payload) {
+				res.status(400).send('Invalid or expired login session');
+				return;
+			}
+
+			const callbackUrl = `${baseUrl}/login/callback`;
+			const {userId} = await oidcClient.exchangeCode(code, callbackUrl, payload.upstreamCodeVerifier);
+
+			const token = provider.issueWebSessionToken(userId);
+			res.redirect(`${baseUrl}/reconfigure?token=${encodeURIComponent(token)}`);
+		} catch (err) {
+			console.error('Login callback error:', err);
 			res.status(500).send('Authentication failed');
 		}
 	});

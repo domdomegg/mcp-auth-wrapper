@@ -13,6 +13,7 @@ const ACCESS_TOKEN_TTL_MS = 3_600_000; // 1 hour
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 3_600_000; // 30 days — must be > ACCESS_TOKEN_TTL_MS, otherwise refresh is useless
 const AUTH_CODE_TTL_MS = 300_000; // 5 minutes
 const PENDING_AUTH_TTL_MS = 600_000; // 10 minutes — must be >= AUTH_CODE_TTL_MS, as pending auth spans upstream login + param collection
+const WEB_LOGIN_TTL_MS = 600_000; // 10 minutes — for the /login → /login/callback round-trip
 
 /** Encrypt + authenticate a JSON payload. Returns a URL-safe base64 string. */
 const seal = <T>(payload: T, key: Buffer): string => {
@@ -73,6 +74,12 @@ type TokenPayload = {
 	clientId: string;
 	userId: string;
 	scopes: string[];
+	expiresAt: number;
+};
+
+/** State for the standalone /login → /login/callback flow. */
+type WebLoginPayload = {
+	upstreamCodeVerifier: string;
 	expiresAt: number;
 };
 
@@ -140,6 +147,30 @@ export class WrapperOAuthProvider implements OAuthServerProvider {
 	/** Re-seal a modified payload (e.g. after adding userId). */
 	sealState(payload: PendingAuthPayload): string {
 		return seal(payload, this.key);
+	}
+
+	/** Seal a PKCE verifier into a state param for the /login flow. */
+	sealWebLogin(upstreamCodeVerifier: string): string {
+		return seal<WebLoginPayload>({
+			upstreamCodeVerifier,
+			expiresAt: Date.now() + WEB_LOGIN_TTL_MS,
+		}, this.key);
+	}
+
+	/** Unseal the state returned to /login/callback. */
+	unsealWebLogin(state: string): WebLoginPayload | undefined {
+		return unseal<WebLoginPayload>(state, this.key);
+	}
+
+	/** Issue an access token for a user that completed the /login flow. */
+	issueWebSessionToken(userId: string): string {
+		return seal<TokenPayload>({
+			type: 'access',
+			clientId: 'web-session',
+			userId,
+			scopes: [],
+			expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS,
+		}, this.key);
 	}
 
 	completeAuthorization(pending: PendingAuthPayload, userId: string): {redirectUrl: string} {

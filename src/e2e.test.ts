@@ -379,6 +379,29 @@ describe('full OAuth flow', () => {
 	}, 30_000);
 });
 
+describe('landing page', () => {
+	test('serves landing page at /', async () => {
+		const res = await fetch(`${wrapperUrl}/`);
+		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toMatch(/text\/html/);
+		const html = await res.text();
+		expect(html).toContain('mcp-auth-wrapper');
+		expect(html).toContain('install-mcp');
+		expect(html).toContain(encodeURIComponent(`${wrapperUrl}/mcp`));
+	});
+
+	test('hides sign-in link with inline (read-only) storage', async () => {
+		const res = await fetch(`${wrapperUrl}/`);
+		const html = await res.text();
+		expect(html).not.toContain('href="/login"');
+	});
+
+	test('/login returns 404 with inline (read-only) storage', async () => {
+		const res = await fetch(`${wrapperUrl}/login`, {redirect: 'manual'});
+		expect(res.status).toBe(404);
+	});
+});
+
 describe('reconfigure tool', () => {
 	test('returns a URL when called with no arguments', async () => {
 		const token = await getAccessToken();
