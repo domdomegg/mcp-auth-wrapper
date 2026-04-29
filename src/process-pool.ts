@@ -53,8 +53,12 @@ export class ProcessPool {
 			this.processes.delete(userId);
 		};
 
+		// On transport error the child may still be running (e.g. malformed stdout,
+		// broken pipe). Drop the map entry so subsequent requests don't reuse a dying
+		// client, then close the transport to terminate the orphaned process.
 		transport.onerror = () => {
 			this.processes.delete(userId);
+			transport.close().catch(noop);
 		};
 
 		return client;
