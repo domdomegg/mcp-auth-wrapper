@@ -5,12 +5,22 @@ import type {Store} from './store.js';
 const IDLE_TIMEOUT_MS = 300_000;
 const noop = () => {/* ignore close errors */};
 
+type Entry = {
+	client: Client;
+	transport: StdioClientTransport;
+	lastUsed: number;
+};
+
 export class ProcessPool {
-	private readonly processes = new Map<string, {
-		client: Client;
-		transport: StdioClientTransport;
-		lastUsed: number;
-	}>();
+	// The published view of currently-tracked children. Mutations to this map
+	// must always be guarded by an identity check on the entry being removed,
+	// because a stale transport's onclose may fire long after its entry has
+	// been replaced — see attachHandlers below.
+	private readonly processes = new Map<string, Entry>();
+
+	// Concurrent getClient calls for the same user share one Promise so we
+	// only ever spawn one child per (userId, in-flight burst).
+	private readonly inflight = new Map<string, Promise<Entry>>();
 
 	private readonly reapInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -26,10 +36,17 @@ export class ProcessPool {
 	}
 
 	async getClient(userId: string): Promise<Client> {
-		const existing = this.processes.get(userId);
-		if (existing) {
-			existing.lastUsed = Date.now();
-			return existing.client;
+		const ready = this.processes.get(userId);
+		if (ready) {
+			ready.lastUsed = Date.now();
+			return ready.client;
+		}
+
+		const pending = this.inflight.get(userId);
+		if (pending) {
+			const entry = await pending;
+			entry.lastUsed = Date.now();
+			return entry.client;
 		}
 
 		const userParams = this.store.getUser(userId);
@@ -37,31 +54,20 @@ export class ProcessPool {
 			throw new Error(`Unknown user: ${userId}`);
 		}
 
-		const transport = new StdioClientTransport({
-			command: this.command,
-			args: this.args,
-			env: {...process.env as Record<string, string>, ...this.baseEnv, ...userParams},
+		// Build the spawn promise synchronously and publish it before any await,
+		// so concurrent callers all see it on their next tick.
+		const spawnPromise = this.spawn(userId, userParams);
+		this.inflight.set(userId, spawnPromise);
+
+		spawnPromise.catch(noop).finally(() => {
+			if (this.inflight.get(userId) === spawnPromise) {
+				this.inflight.delete(userId);
+			}
 		});
 
-		const client = new Client({name: 'mcp-auth-wrapper', version: '1.0.0'});
-		await client.connect(transport);
-
-		this.processes.set(userId, {client, transport, lastUsed: Date.now()});
-
-		// Remove stale entry if the child process dies unexpectedly
-		transport.onclose = () => {
-			this.processes.delete(userId);
-		};
-
-		// On transport error the child may still be running (e.g. malformed stdout,
-		// broken pipe). Drop the map entry so subsequent requests don't reuse a dying
-		// client, then close the transport to terminate the orphaned process.
-		transport.onerror = () => {
-			this.processes.delete(userId);
-			transport.close().catch(noop);
-		};
-
-		return client;
+		const entry = await spawnPromise;
+		entry.lastUsed = Date.now();
+		return entry.client;
 	}
 
 	invalidateUser(userId: string): void {
@@ -79,6 +85,44 @@ export class ProcessPool {
 
 		await Promise.all([...this.processes.values()].map(async (entry) => entry.client.close().catch(noop)));
 		this.processes.clear();
+	}
+
+	private async spawn(userId: string, userParams: Record<string, string>): Promise<Entry> {
+		const transport = new StdioClientTransport({
+			command: this.command,
+			args: this.args,
+			env: {...process.env as Record<string, string>, ...this.baseEnv, ...userParams},
+		});
+
+		const client = new Client({name: 'mcp-auth-wrapper', version: '1.0.0'});
+		const entry: Entry = {client, transport, lastUsed: Date.now()};
+
+		// Attach handlers BEFORE awaiting connect so a close-during-connect is caught.
+		this.attachHandlers(userId, entry);
+
+		await client.connect(transport);
+
+		// Publish into `processes` synchronously after connect completes, so any
+		// caller awaiting the spawn promise sees the entry in the map immediately.
+		this.processes.set(userId, entry);
+		return entry;
+	}
+
+	private attachHandlers(userId: string, entry: Entry): void {
+		// Identity guard: only mutate the map if the entry being closed is
+		// still the active one for this user. A late close from a prior child
+		// must not evict its replacement.
+		const removeIfCurrent = () => {
+			if (this.processes.get(userId) === entry) {
+				this.processes.delete(userId);
+			}
+		};
+
+		entry.transport.onclose = removeIfCurrent;
+		entry.transport.onerror = () => {
+			removeIfCurrent();
+			entry.transport.close().catch(noop);
+		};
 	}
 
 	private reapIdle(): void {
