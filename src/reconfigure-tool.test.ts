@@ -34,6 +34,14 @@ describe('getReconfigureTool', () => {
 	test('generates tool definition with correct schema', () => {
 		const tool = getReconfigureTool(reconfigureUrl, envPerUser);
 		expect(tool.name).toBe(RECONFIGURE_TOOL_NAME);
+		expect(tool.title).toBe('Reconfigure server');
+		expect(tool.annotations).toEqual({
+			title: 'Reconfigure server',
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: true,
+			openWorldHint: false,
+		});
 		expect(tool.inputSchema.properties).toEqual({
 			API_KEY: {type: 'string', description: 'API Key'},
 			REGION: {type: 'string', description: 'Region'},

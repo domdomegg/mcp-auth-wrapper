@@ -6,6 +6,7 @@ export const RECONFIGURE_TOOL_NAME = 'mcp_auth_wrapper__reconfigure';
 
 export const getReconfigureTool = (reconfigureUrl: string, envParams: EnvParam[]) => ({
 	name: RECONFIGURE_TOOL_NAME,
+	title: 'Reconfigure server',
 	description: 'Update your configuration for this MCP server. Call with parameter values to update directly, or call with no arguments to get a browser URL for configuration.',
 	inputSchema: {
 		type: 'object' as const,
@@ -13,6 +14,13 @@ export const getReconfigureTool = (reconfigureUrl: string, envParams: EnvParam[]
 			p.name,
 			{type: 'string' as const, description: p.description ?? p.label},
 		])),
+	},
+	annotations: {
+		title: 'Reconfigure server',
+		readOnlyHint: false,
+		destructiveHint: false,
+		idempotentHint: true,
+		openWorldHint: false,
 	},
 });
 
