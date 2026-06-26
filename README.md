@@ -118,6 +118,8 @@ A full example:
 
 Users can update their per-user env vars at any time via a **reconfigure** tool that's automatically added to the MCP server's tool list.
 
+Each spawned server process also receives an `MCP_USER_ID` environment variable set to the authenticated user's identity (the `auth.userClaim` value, `sub` by default). Servers can use this to key per-user state — for example, a distinct storage directory per user. It is set after `envBase`/`envPerUser`, so it cannot be overridden by a user-supplied value.
+
 <details>
 <summary>Advanced: scaling and persistence</summary>
 

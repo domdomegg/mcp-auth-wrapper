@@ -91,4 +91,12 @@ describe('ProcessPool', () => {
 		expect(await waitForExit(pid!)).toBe(true);
 		expect(internals.processes.has('adam')).toBe(false);
 	}, 15_000);
+
+	test('injects the authenticated userId into the child as MCP_USER_ID', async () => {
+		const client = await pool.getClient('adam');
+
+		const result = await client.callTool({name: 'get_env', arguments: {name: 'MCP_USER_ID'}});
+		const text = (result.content as {type: string; text: string}[])[0]?.text;
+		expect(text).toBe('adam');
+	}, 15_000);
 });

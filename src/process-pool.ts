@@ -91,7 +91,11 @@ export class ProcessPool {
 		const transport = new StdioClientTransport({
 			command: this.command,
 			args: this.args,
-			env: {...process.env as Record<string, string>, ...this.baseEnv, ...userParams},
+			// MCP_USER_ID is set last so the authenticated identity can't be overridden by a
+			// user-supplied param; lets spawned servers key per-user state on the identity.
+			env: {
+				...process.env as Record<string, string>, ...this.baseEnv, ...userParams, MCP_USER_ID: userId,
+			},
 		});
 
 		const client = new Client({name: 'mcp-auth-wrapper', version: '1.0.0'});
