@@ -113,4 +113,32 @@ describe('Store — profiles', () => {
 		store.upsertProfile('adam', DEFAULT_PROFILE_ID, 'Default', {TOKEN: 'v'});
 		expect(store.getUser('adam')).toEqual({TOKEN: 'v'});
 	});
+
+	// Reconfigure edits whichever profile the connection resolves to. Writing to
+	// the user row instead would leave the running configuration untouched,
+	// which is what happened before the reconfigure page knew about profiles.
+	test('editing a bound profile changes what that client resolves to', () => {
+		store.upsertProfile('adam', DEFAULT_PROFILE_ID, 'Default', {TOKEN: 'personal'});
+		store.upsertProfile('adam', 'work', 'Work', {TOKEN: 'old'});
+		store.setBinding('adam', 'client-2', 'work');
+
+		const bound = store.resolveProfileId('adam', 'client-2');
+		store.upsertProfile('adam', bound, 'Work', {TOKEN: 'new'});
+
+		expect(store.getProfile('adam', 'work')?.params).toEqual({TOKEN: 'new'});
+		// The other profile is untouched.
+		expect(store.getProfile('adam', DEFAULT_PROFILE_ID)?.params).toEqual({TOKEN: 'personal'});
+	});
+
+	test('renaming keeps the profile id, its params and its bindings', () => {
+		store.upsertProfile('adam', 'work', 'Work', {TOKEN: 'w'});
+		store.setBinding('adam', 'client-2', 'work');
+
+		const profile = store.getProfile('adam', 'work')!;
+		store.upsertProfile('adam', 'work', 'Claube', profile.params);
+
+		expect(store.getProfile('adam', 'work')?.label).toBe('Claube');
+		expect(store.getProfile('adam', 'work')?.params).toEqual({TOKEN: 'w'});
+		expect(store.resolveProfileId('adam', 'client-2')).toBe('work');
+	});
 });

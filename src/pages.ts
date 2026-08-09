@@ -182,18 +182,69 @@ export const renderReconfigurePage = (
 	token: string,
 	existingValues: Record<string, string>,
 	saved?: boolean,
-): string => `${pageHead('Reconfigure')}
+	profiles: ProfileChoice[] = [],
+	activeProfile = DEFAULT_PROFILE_ID,
+	renaming?: string,
+): string => {
+	// Renaming replaces the form entirely: it is a different edit from changing
+	// credentials, and showing both at once invites saving the wrong one.
+	if (renaming) {
+		const label = profiles.find((p) => p.id === renaming)?.label ?? '';
+		return `${pageHead('Rename profile')}
+<body>
+<h1>Rename profile</h1>
+<p class="msg">Choose a new name for this profile.</p>
+<form method="POST">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<input type="hidden" name="renameProfile" value="${escapeHtml(renaming)}">
+<label for="renameTo">Name</label>
+<input id="renameTo" name="renameTo" type="text" value="${escapeHtml(label)}">
+<button type="submit">save</button>
+</form>
+${footerHtml}
+</body></html>`;
+	}
+
+	const active = profiles.find((p) => p.id === activeProfile)?.label;
+
+	return `${pageHead('Reconfigure')}
 <body>
 <h1>Reconfigure</h1>
 ${saved ? '<div class="banner">Settings saved. New configuration will be used on the next request.</div>' : ''}
-<p class="msg">Update your credentials below.</p>
+<p class="msg">${active && profiles.length > 1
+	? `Editing the <strong>${escapeHtml(active)}</strong> profile — the one this connection uses.`
+	: 'Update your credentials below.'}</p>
 <form method="POST">
 <input type="hidden" name="token" value="${escapeHtml(token)}">
 ${paramFields(params, existingValues)}
 <button type="submit">save</button>
 </form>
+${profiles.length > 1 ? renderProfileList(profiles, activeProfile, token) : ''}
 ${footerHtml}
 </body></html>`;
+};
+
+/**
+ * Profiles other than the one being edited, so they can be renamed or removed
+ * without first connecting a client to them.
+ */
+const renderProfileList = (profiles: ProfileChoice[], activeProfile: string, token: string): string => {
+	const rows = profiles.map((p) => {
+		const base = `/reconfigure?token=${encodeURIComponent(token)}&profile=${encodeURIComponent(p.id)}`;
+		const remove = p.id === DEFAULT_PROFILE_ID
+			? ''
+			: `<a href="${escapeHtml(`${base}&action=delete`)}">delete</a>`;
+		return `<div class="opt">
+<span class="opt-name">${escapeHtml(p.label)}${p.id === activeProfile ? ' <span class="step-label">in use here</span>' : ''}</span>
+<span class="opt-actions"><a href="${escapeHtml(`${base}&action=rename`)}">rename</a>${remove}</span>
+</div>`;
+	}).join('\n');
+
+	return `<div class="step" style="margin-top:40px">
+<div class="step-label" style="padding:12px 14px 4px">Your profiles</div>
+<div class="opts">${rows}</div>
+</div>`;
+};
 
 function escapeHtml(s: string): string {
 	return s

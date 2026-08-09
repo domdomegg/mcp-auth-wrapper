@@ -390,8 +390,34 @@ export const createApp = (
 				return;
 			}
 
-			const existingValues = store.getUser(userId) ?? {};
-			res.send(renderReconfigurePage(config.envPerUser ?? [], token, existingValues));
+			// Edits apply to the profile this client is bound to, not to the
+			// user — params live on profiles, so writing to the user row would
+			// silently leave the running configuration unchanged.
+			const profileId = store.resolveProfileId(userId, authInfo.clientId);
+			const action = getString(req.query.action);
+			const target = getString(req.query.profile);
+
+			if (action === 'delete' && target) {
+				try {
+					store.deleteProfile(userId, target);
+					pool.invalidateUser(userId, target);
+				} catch (error) {
+					res.status(400).send(error instanceof Error ? error.message : 'Cannot delete that profile');
+					return;
+				}
+			}
+
+			const profiles = store.listProfiles(userId);
+			const existingValues = store.getProfile(userId, profileId)?.params ?? {};
+			res.send(renderReconfigurePage(
+				config.envPerUser ?? [],
+				token,
+				existingValues,
+				false,
+				profiles,
+				profileId,
+				action === 'rename' ? target : undefined,
+			));
 		} catch {
 			res.status(401).send('Invalid or expired token');
 		}
@@ -420,10 +446,32 @@ export const createApp = (
 				}
 			}
 
-			store.upsertUser(userId, params);
-			pool.invalidateUser(userId);
+			const profileId = store.resolveProfileId(userId, authInfo.clientId);
+			const existing = store.getProfile(userId, profileId);
+			// A rename arrives with the same form; keep the params untouched when
+			// only the label changed.
+			const renameTo = getString(req.body.renameTo)?.trim();
+			const target = getString(req.body.renameProfile);
 
-			res.send(renderReconfigurePage(config.envPerUser ?? [], token, params, true));
+			if (renameTo && target) {
+				const profile = store.getProfile(userId, target);
+				if (profile) {
+					store.upsertProfile(userId, target, renameTo, profile.params);
+				}
+			} else {
+				store.upsertProfile(userId, profileId, existing?.label ?? 'Default', params);
+				pool.invalidateUser(userId, profileId);
+			}
+
+			const saved = store.getProfile(userId, profileId)?.params ?? params;
+			res.send(renderReconfigurePage(
+				config.envPerUser ?? [],
+				token,
+				saved,
+				true,
+				store.listProfiles(userId),
+				profileId,
+			));
 		} catch {
 			res.status(401).send('Invalid or expired token');
 		}
