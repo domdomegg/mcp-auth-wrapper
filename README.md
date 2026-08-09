@@ -320,7 +320,7 @@ store/<MCP_USER_ID>/<MCP_PROFILE_ID>
 
 Two things to get right when adopting it:
 
-- **Leave the `default` profile at the old path.** Everyone has one, so appending it moves every existing session down a level — a server that stores a login there will find an empty directory and behave as though it is being set up for the first time.
+- **Migrate existing data into the default profile's directory.** Everyone has a default profile, so the new segment moves every existing session down a level. Without a migration, a server that stores a login there finds an empty directory and behaves as though it is being set up for the first time. Move the old contents in on first run rather than exempting the default profile from the path scheme — an exemption is permanent, and leaves the default living somewhere different from every other profile forever.
 - **Encode each segment separately.** Sanitising a joined key can destroy the separator, merging two accounts; and replacing unsafe characters is not injective, so `adam@x.com` and `adam.x.com` collide.
 
 ## Contributing
