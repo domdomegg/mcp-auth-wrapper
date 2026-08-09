@@ -51,6 +51,9 @@ type PoolInternals = {
 	reapIdle: () => void;
 };
 
+// Children are keyed on (userId, profileId), joined with a NUL.
+const key = (userId: string, profileId = 'default') => `${userId}\0${profileId}`;
+
 /**
  * Polls the pool's internal map to record every PID that ever made it in,
  * then at the end identifies PIDs that are still alive but no longer tracked
@@ -134,7 +137,7 @@ describe('ProcessPool — leak regressions', () => {
 	test('stale transport.onclose from a prior child does not evict the fresh entry', async () => {
 		// Spawn child A.
 		await pool.getClient('adam');
-		const oldEntry = internals.processes.get('adam')!;
+		const oldEntry = internals.processes.get(key('adam'))!;
 		const oldPid = oldEntry.transport.pid!;
 		const staleOnclose = oldEntry.transport.onclose;
 		expect(staleOnclose).toBeDefined();
@@ -143,11 +146,11 @@ describe('ProcessPool — leak regressions', () => {
 		// will exit some milliseconds later, at which point its onclose fires.
 		oldEntry.lastUsed = 0;
 		internals.reapIdle();
-		expect(internals.processes.has('adam')).toBe(false);
+		expect(internals.processes.has(key('adam'))).toBe(false);
 
 		// In the meantime, a fresh request comes in for the same user, spawning B.
 		await pool.getClient('adam');
-		const newEntry = internals.processes.get('adam')!;
+		const newEntry = internals.processes.get(key('adam'))!;
 		expect(newEntry.transport.pid).not.toBe(oldPid);
 		const newPid = newEntry.transport.pid!;
 
@@ -156,7 +159,7 @@ describe('ProcessPool — leak regressions', () => {
 		staleOnclose?.();
 
 		// B must remain tracked.
-		expect(internals.processes.get('adam')).toBe(newEntry);
+		expect(internals.processes.get(key('adam'))).toBe(newEntry);
 		expect(isAlive(newPid)).toBe(true);
 
 		// And no orphans.
@@ -166,34 +169,34 @@ describe('ProcessPool — leak regressions', () => {
 
 	test('stale transport.onerror from a prior child does not evict the fresh entry', async () => {
 		await pool.getClient('adam');
-		const oldEntry = internals.processes.get('adam')!;
+		const oldEntry = internals.processes.get(key('adam'))!;
 		const oldPid = oldEntry.transport.pid!;
 		const staleOnerror = oldEntry.transport.onerror;
 
 		// Same setup as above but exercising the onerror handler.
 		pool.invalidateUser('adam');
-		expect(internals.processes.has('adam')).toBe(false);
+		expect(internals.processes.has(key('adam'))).toBe(false);
 
 		await pool.getClient('adam');
-		const newEntry = internals.processes.get('adam')!;
+		const newEntry = internals.processes.get(key('adam'))!;
 		expect(newEntry.transport.pid).not.toBe(oldPid);
 
 		// A late transport error on the old transport fires its onerror,
 		// which on the buggy code calls processes.delete(userId) → kills B's entry.
 		staleOnerror?.(new Error('synthetic late error from old transport'));
 
-		expect(internals.processes.get('adam')).toBe(newEntry);
+		expect(internals.processes.get(key('adam'))).toBe(newEntry);
 		await waitForExit(oldPid);
 		expect(await leaks.findOrphans()).toEqual([]);
 	}, 15_000);
 
 	test('invalidateUser then immediate getClient leaks no children once the old close completes', async () => {
 		await pool.getClient('adam');
-		const oldPid = internals.processes.get('adam')!.transport.pid!;
+		const oldPid = internals.processes.get(key('adam'))!.transport.pid!;
 
 		pool.invalidateUser('adam');
 		await pool.getClient('adam');
-		const newPid = internals.processes.get('adam')!.transport.pid!;
+		const newPid = internals.processes.get(key('adam'))!.transport.pid!;
 		expect(newPid).not.toBe(oldPid);
 
 		// Wait for A's child (and its onclose handler) to finish doing its thing.
@@ -201,27 +204,27 @@ describe('ProcessPool — leak regressions', () => {
 		await wait(200);
 
 		// B must still be tracked and alive.
-		expect(internals.processes.get('adam')?.transport.pid).toBe(newPid);
+		expect(internals.processes.get(key('adam'))?.transport.pid).toBe(newPid);
 		expect(isAlive(newPid)).toBe(true);
 		expect(await leaks.findOrphans()).toEqual([]);
 	}, 15_000);
 
 	test('reapIdle then immediate getClient leaks no children', async () => {
 		await pool.getClient('adam');
-		const oldPid = internals.processes.get('adam')!.transport.pid!;
+		const oldPid = internals.processes.get(key('adam'))!.transport.pid!;
 
 		// Force-stale the entry and trigger reap directly (avoid waiting 5 minutes).
-		internals.processes.get('adam')!.lastUsed = 0;
+		internals.processes.get(key('adam'))!.lastUsed = 0;
 		internals.reapIdle();
 
 		await pool.getClient('adam');
-		const newPid = internals.processes.get('adam')!.transport.pid!;
+		const newPid = internals.processes.get(key('adam'))!.transport.pid!;
 		expect(newPid).not.toBe(oldPid);
 
 		expect(await waitForExit(oldPid)).toBe(true);
 		await wait(200);
 
-		expect(internals.processes.get('adam')?.transport.pid).toBe(newPid);
+		expect(internals.processes.get(key('adam'))?.transport.pid).toBe(newPid);
 		expect(await leaks.findOrphans()).toEqual([]);
 	}, 15_000);
 });
@@ -300,7 +303,7 @@ describe('ProcessPool — stress', () => {
 		await pool.getClient('adam');
 		// Allow any pending close()s to settle.
 		await wait(3000);
-		expect(internals.processes.has('adam')).toBe(true);
+		expect(internals.processes.has(key('adam'))).toBe(true);
 		expect(await leaks.findOrphans()).toEqual([]);
 	}, 60_000);
 
@@ -308,13 +311,13 @@ describe('ProcessPool — stress', () => {
 		const cycles = 8;
 		for (let i = 0; i < cycles; i++) {
 			await pool.getClient('adam'); // eslint-disable-line no-await-in-loop
-			internals.processes.get('adam')!.lastUsed = 0;
+			internals.processes.get(key('adam'))!.lastUsed = 0;
 			internals.reapIdle();
 		}
 
 		await pool.getClient('adam');
 		await wait(3000);
-		expect(internals.processes.has('adam')).toBe(true);
+		expect(internals.processes.has(key('adam'))).toBe(true);
 		expect(await leaks.findOrphans()).toEqual([]);
 	}, 60_000);
 
@@ -339,7 +342,7 @@ describe('ProcessPool — stress', () => {
 		await wait(3000);
 
 		for (const u of users) {
-			expect(internals.processes.has(u)).toBe(true);
+			expect(internals.processes.has(key(u))).toBe(true);
 		}
 
 		expect(await leaks.findOrphans()).toEqual([]);
