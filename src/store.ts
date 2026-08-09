@@ -91,6 +91,8 @@ export class Store {
 
 	upsertProfile(userId: string, profileId: string, label: string, params: Record<string, string>): void {
 		this.assertWritable();
+		// A profile with no name renders as a blank row, so never store one.
+		label = label.trim() || (profileId === DEFAULT_PROFILE_ID ? 'Default' : profileId);
 		this.db.prepare(`
 			INSERT INTO profiles (user_id, profile_id, label, params) VALUES (?, ?, ?, ?)
 			ON CONFLICT(user_id, profile_id) DO UPDATE SET label = excluded.label, params = excluded.params

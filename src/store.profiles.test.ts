@@ -130,6 +130,17 @@ describe('Store — profiles', () => {
 		expect(store.getProfile('adam', DEFAULT_PROFILE_ID)?.params).toEqual({TOKEN: 'personal'});
 	});
 
+	// Submitting the Configure form with the name field blank sent an empty
+	// string, and `??` let it through — so picking an existing profile wiped
+	// its label and the row rendered nameless.
+	test('a blank label never reaches the store', () => {
+		store.upsertProfile('adam', DEFAULT_PROFILE_ID, '', {});
+		expect(store.getProfile('adam', DEFAULT_PROFILE_ID)?.label).toBe('Default');
+
+		store.upsertProfile('adam', 'pab12', '   ', {});
+		expect(store.getProfile('adam', 'pab12')?.label).toBe('pab12');
+	});
+
 	test('renaming keeps the profile id, its params and its bindings', () => {
 		store.upsertProfile('adam', 'work', 'Work', {TOKEN: 'w'});
 		store.setBinding('adam', 'client-2', 'work');

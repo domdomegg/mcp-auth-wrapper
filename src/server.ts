@@ -357,7 +357,11 @@ export const createApp = (
 		// the "new profile" option is, in which case the name field applies.
 		const chosen = getString(req.body.profileId) ?? DEFAULT_PROFILE_ID;
 		const isNew = chosen === NEW_PROFILE_OPTION;
-		const newProfileLabel = getString(req.body.newProfileLabel)?.trim();
+		// Empty rather than undefined when the name field is left blank, which is
+		// the normal case for picking an existing profile. `||` not `??`: an
+		// empty string must fall through, or it overwrites the existing label —
+		// which is how the default profile ended up nameless.
+		const newProfileLabel = getString(req.body.newProfileLabel)?.trim() || undefined;
 
 		if (isNew && !newProfileLabel) {
 			res.status(400).send('Please name the new profile');
@@ -366,8 +370,8 @@ export const createApp = (
 
 		const profileId = isNew ? `p${Date.now().toString(36)}` : chosen;
 		const label = newProfileLabel
-			?? store.getProfile(pending.userId, profileId)?.label
-			?? 'Default';
+			|| store.getProfile(pending.userId, profileId)?.label
+			|| 'Default';
 
 		store.upsertProfile(pending.userId, profileId, label, params);
 		// Bind this client, so every later request from it resolves here without
@@ -467,7 +471,9 @@ export const createApp = (
 					store.upsertProfile(userId, target, renameTo, profile.params);
 				}
 			} else {
-				store.upsertProfile(userId, profileId, existing?.label ?? 'Default', params);
+				// `||`, so a label that is somehow empty is replaced rather than
+				// carried forward.
+				store.upsertProfile(userId, profileId, existing?.label || 'Default', params);
 				pool.invalidateUser(userId, profileId);
 			}
 
