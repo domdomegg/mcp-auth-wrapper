@@ -141,6 +141,17 @@ describe('Store — profiles', () => {
 		expect(store.getProfile('adam', 'pab12')?.label).toBe('pab12');
 	});
 
+	// The /mcp gate used to read the legacy users row, which is only written for
+	// the default profile — so a user whose first act was creating a named
+	// profile was locked out with "User not configured".
+	test('a user with only a non-default profile is configured', () => {
+		store.upsertProfile('newuser', 'pab12', 'Claube', {TOKEN: 'v'});
+		store.setBinding('newuser', 'client-9', 'pab12');
+
+		const bound = store.resolveProfileId('newuser', 'client-9');
+		expect(store.getProfile('newuser', bound)).toBeDefined();
+	});
+
 	test('renaming keeps the profile id, its params and its bindings', () => {
 		store.upsertProfile('adam', 'work', 'Work', {TOKEN: 'w'});
 		store.setBinding('adam', 'client-2', 'work');

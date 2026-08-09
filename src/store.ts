@@ -47,9 +47,13 @@ export class Store {
 			)
 		`);
 
-		// Which profile a given OAuth client talks to. clientId is issued by this
-		// wrapper and carried in its own sealed token, so a client cannot choose
-		// its own binding.
+		// Which profile a given OAuth client talks to.
+		//
+		// Note this is an organisational boundary, not a security one: client ids
+		// are accepted as presented rather than checked against a registry, so
+		// within one identity a client that knows another of its client ids can
+		// reach that profile. userId, which comes from the verified upstream
+		// token, is what actually separates users.
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS bindings (
 				user_id TEXT NOT NULL,
@@ -107,8 +111,8 @@ export class Store {
 
 	/**
 	 * Removes a profile, moving anything bound to it back to the default rather
-	 * than leaving bindings pointing at something that no longer exists.
-	 * Refuses to remove the default while other profiles still rely on it.
+	 * than leaving bindings pointing at something that no longer exists. The
+	 * default cannot be removed: it is the fallback every unbound client uses.
 	 */
 	deleteProfile(userId: string, profileId: string): void {
 		this.assertWritable();

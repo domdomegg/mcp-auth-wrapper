@@ -14,6 +14,7 @@ import type {OAuthClientInformationFull} from '@modelcontextprotocol/sdk/shared/
 import type {AuthorizationParams} from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import {mcpAuthRouter, getOAuthProtectedResourceMetadataUrl} from '@modelcontextprotocol/sdk/server/auth/router.js';
 import {requireBearerAuth} from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import {randomUUID} from 'node:crypto';
 import express from 'express';
 import type {WrapperOAuthProvider} from './oauth-provider.js';
 import type {OidcClient} from './auth.js';
@@ -67,7 +68,7 @@ const createProxyServer = (
 			return handleReconfigureCall(
 				request.params.arguments ?? {},
 				{
-					store, pool, userId, envPerUser, reconfigureUrl,
+					store, pool, userId, profileId, envPerUser, reconfigureUrl,
 				},
 			);
 		}
@@ -207,26 +208,15 @@ export const createApp = (
 			const callbackUrl = `${baseUrl}/callback`;
 			const {userId} = await oidcClient.exchangeCode(code, callbackUrl, pending.upstreamCodeVerifier);
 
-			// Show the params form if envPerUser is configured and storage is writable,
-			// so users can review/update their configuration on re-auth (e.g. via a Reconfigure flow).
-			// Skip if storage is inline (read-only) and user already has all params.
-			const existingParams = store.getUser(userId);
+			// Configure covers both credentials and profile selection. The profile
+			// part applies even to a server declaring no params, and cannot be
+			// gated on already having a choice: creating the second profile
+			// happens on this very screen, so requiring two means nobody reaches
+			// it and every connection silently takes the default. Inline storage
+			// is read-only, so there is nothing to configure.
 			const isInlineStorage = typeof config.storage === 'object';
-			const needsParams = config.envPerUser
-				&& config.envPerUser.length > 0
-				&& !(isInlineStorage && existingParams && config.envPerUser.every((p) => existingParams[p.name]));
 
-			// Also show it when there is a profile to pick, even for a server that
-			// asks for no params at all. Without this a connection silently binds
-			// to the default profile — which for a deliberate second account is
-			// the wrong one, and the user is never asked.
-			// Not "has more than one profile": creating the second one happens on
-			// this screen, so gating on already having two means nobody ever gets
-			// there. A connection then binds silently to the default — which is
-			// how whatsapp-claube ended up pointing at Adam's own account.
-			const hasProfileChoice = !isInlineStorage;
-
-			if (needsParams || hasProfileChoice) {
+			if (!isInlineStorage) {
 				// Re-seal with userId attached so /params can use it
 				pending.userId = userId;
 				const newSealedState = provider.sealState(pending);
@@ -234,11 +224,8 @@ export const createApp = (
 				return;
 			}
 
-			// User is fully configured — if not in store yet, create empty entry
-			if (!existingParams) {
-				store.upsertUser(userId, {});
-			}
-
+			// Only inline storage reaches here, and it is read-only — its users
+			// are declared in config, so there is nothing to create.
 			const {redirectUrl} = provider.completeAuthorization(pending, userId);
 			res.redirect(redirectUrl);
 		} catch (err) {
@@ -368,7 +355,10 @@ export const createApp = (
 			return;
 		}
 
-		const profileId = isNew ? `p${Date.now().toString(36)}` : chosen;
+		// Random, not a millisecond timestamp: two profiles created in the same
+		// millisecond — or one double-submitted form — collided, and upsert's
+		// ON CONFLICT silently overwrote the first one's params.
+		const profileId = isNew ? `p${randomUUID()}` : chosen;
 		const label = newProfileLabel
 			|| store.getProfile(pending.userId, profileId)?.label
 			|| 'Default';
@@ -506,9 +496,11 @@ export const createApp = (
 
 		const accessToken = req.auth!.token;
 
-		// Check if user has params configured
-		const userParams = store.getUser(userId);
-		if (!userParams) {
+		// Configured means "the bound profile exists", not "the legacy user row
+		// exists" — that row is only written for the default profile, so a user
+		// whose first act was creating a named profile was locked out entirely.
+		const bound = store.resolveProfileId(userId, req.auth!.clientId);
+		if (!store.getProfile(userId, bound)) {
 			res.status(403).json({error: 'User not configured. Please reconfigure via the reconfigure tool.'});
 			return;
 		}
@@ -518,8 +510,9 @@ export const createApp = (
 			enableJsonResponse: true,
 		});
 
-		// From the wrapper's own sealed token, so a client cannot claim to be
-		// bound to a profile it was not given.
+		// From the wrapper's own sealed token. Separates profiles within one
+		// identity; it is not a trust boundary between parties — see the
+		// profiles section of the README.
 		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken, req.auth!.clientId);
 		await server.connect(transport as unknown as Transport);
 

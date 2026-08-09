@@ -126,7 +126,9 @@ One identity often needs more than one account on the same upstream — a person
 
 Every user starts with a single profile named `default`, which behaves exactly as before profiles existed. Additional ones are created from the Configure screen shown while connecting a client.
 
-Each connecting OAuth client is **bound** to one profile. The binding is made when the client is authorized and keyed on the client id this wrapper issued, so a client cannot select a profile for itself — the same property that makes `MCP_USER_ID` trustworthy. Clients bound to the same profile share a process; only a deliberate second profile starts a second one.
+Each connecting OAuth client is **bound** to one profile, chosen when the client is authorized and keyed on its client id. Clients bound to the same profile share a process; only a deliberate second profile starts a second one.
+
+> **Profiles are an organisational boundary, not a security boundary.** `MCP_USER_ID` is trustworthy — it comes from the verified upstream token, and no client can reach another user's data. `MCP_PROFILE_ID` is weaker: client ids are accepted as presented rather than being checked against a registry, and the profile selection is submitted with the form. So *within a single identity*, a client that knows another of your client ids can reach that profile. Use profiles to keep your own accounts apart; do not rely on them to isolate a party you would not trust with the whole identity.
 
 Spawned processes receive `MCP_PROFILE_ID` alongside `MCP_USER_ID`. Servers that want per-account storage should use **both**, as separate path segments:
 

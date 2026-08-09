@@ -26,10 +26,12 @@ export const getReconfigureTool = (reconfigureUrl: string, envParams: EnvParam[]
 
 export const handleReconfigureCall = (
 	args: Record<string, unknown>,
-	{store, pool, userId, envPerUser, reconfigureUrl}: {
+	{store, pool, userId, profileId, envPerUser, reconfigureUrl}: {
 		store: Store;
 		pool: ProcessPool;
 		userId: string;
+		/** The profile this connection is bound to; params live on it, not on the user. */
+		profileId: string;
 		envPerUser: EnvParam[];
 		reconfigureUrl: string;
 	},
@@ -60,8 +62,11 @@ export const handleReconfigureCall = (
 		}
 
 		try {
-			store.upsertUser(userId, params);
-			pool.invalidateUser(userId);
+			// Writes the bound profile, not the legacy user row — that row is no
+			// longer read when spawning, so writing it silently changed nothing.
+			const existing = store.getProfile(userId, profileId);
+			store.upsertProfile(userId, profileId, existing?.label || 'Default', params);
+			pool.invalidateUser(userId, profileId);
 			const result = {
 				status: 'updated',
 				message: 'Configuration updated. Your MCP server will use the new settings on the next request.',
