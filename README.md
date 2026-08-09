@@ -308,6 +308,21 @@ Users are matched by the `auth.userClaim` (default: `sub`) from the login token.
 
 </details>
 
+## Upgrading to 2.0
+
+2.0 adds [profiles](#profiles). Existing configuration is migrated automatically — params stored against a user become a profile named `default`, and clients that connected before profiles resolve to it — so no action is needed for the wrapper itself.
+
+The breaking change is for **spawned servers**, which now also receive `MCP_PROFILE_ID`. A server that keys storage on `MCP_USER_ID` alone keeps working, but will share one store between a user's profiles, which defeats the point. To support profiles, use both as separate path segments:
+
+```
+store/<MCP_USER_ID>/<MCP_PROFILE_ID>
+```
+
+Two things to get right when adopting it:
+
+- **Leave the `default` profile at the old path.** Everyone has one, so appending it moves every existing session down a level — a server that stores a login there will find an empty directory and behave as though it is being set up for the first time.
+- **Encode each segment separately.** Sanitising a joined key can destroy the separator, merging two accounts; and replacing unsafe characters is not injective, so `adam@x.com` and `adam.x.com` collide.
+
 ## Contributing
 
 Pull requests are welcomed on GitHub! To get started:
