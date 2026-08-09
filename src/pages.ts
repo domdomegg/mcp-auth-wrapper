@@ -1,3 +1,4 @@
+import {DEFAULT_PROFILE_ID} from './store.js';
 import type {EnvParam} from './types.js';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS module, can't use import.meta
@@ -28,6 +29,41 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .desc { font-size: 11px; color: var(--subtle); margin-bottom: 4px; }
   input { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
   input:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
+  /* Profile picker. Radios rather than a select: a native dropdown's option
+     list is OS chrome that cannot be styled, and one control with one
+     selection leaves no ambiguity about which profile is being used.
+     Collapsed by default — the common case is not changing profile. */
+  .step { border: 1px solid var(--input-border); border-radius: 4px; margin-bottom: 28px; }
+  .step > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: baseline; gap: 8px; }
+  .step > summary::-webkit-details-marker { display: none; }
+  .step-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .step-value { font-size: 13px; }
+  .step-toggle { margin-left: auto; font-size: 11px; color: var(--subtle); }
+  .step[open] > summary { border-bottom: 1px solid var(--input-border); }
+  .step[open] .step-toggle::after { content: 'close'; }
+  .step:not([open]) .step-toggle::after { content: 'change'; }
+  .opts { padding: 4px 0; display: flex; flex-direction: column; }
+  /* The rows are labels, so the global label margins apply and stack 24px
+     between them on top of this padding. Reset explicitly. */
+  .opt { display: flex; align-items: center; gap: 10px; padding: 9px 14px; margin: 0; cursor: pointer; }
+  .opt:hover { background: var(--input-bg); }
+  /* Drawn by hand: accent-color alone leaves the unselected ring nearly
+     invisible against a dark background. Pinned square by min-width and
+     aspect-ratio — the surrounding flex row otherwise stretches it oval. */
+  .opt input[type=radio] { appearance: none; width: 14px; min-width: 14px; height: 14px; aspect-ratio: 1; flex: 0 0 14px; margin: 0; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; display: grid; place-content: center; }
+  .opt input[type=radio]:checked { border-color: var(--fg); }
+  /* Centred by the grid rather than by insets, which ignore the border and
+     leave the dot a pixel off. */
+  .opt input[type=radio]::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+  .opt input[type=radio]:checked::after { background: var(--fg); }
+  .opt-name { font-size: 13px; }
+  .opt-actions { margin-left: auto; display: flex; gap: 12px; }
+  .opt-actions a { font-size: 11px; color: var(--subtle); text-decoration: none; border-bottom: 1px solid var(--input-border); }
+  .opt-actions a:hover { color: var(--fg); }
+  /* block + auto margins fills the space left over, without the arithmetic:
+     width:100% with margins overflows, and width:auto on an input falls back
+     to its intrinsic size rather than stretching. */
+  .new-name { display: block; margin: 0 14px 12px 38px; width: unset; min-width: 0; align-self: stretch; }
   button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
   button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
@@ -47,21 +83,93 @@ const paramFields = (params: EnvParam[], existingValues?: Record<string, string>
 ${p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : ''}
 <input id="${escapeHtml(p.name)}" name="${escapeHtml(p.name)}" type="${p.secret ? 'password' : 'text'}" value="${escapeHtml(existingValues?.[p.name] ?? '')}">`).join('\n');
 
+export type ProfileChoice = {id: string; label: string; inUse?: boolean};
+
+/** Radio value meaning "create one", so the picker stays a single control. */
+export const NEW_PROFILE_OPTION = '__new__';
+
+/**
+ * Lets one identity keep several separate configurations of the same server.
+ * Only rendered when there is genuinely a choice — with a single profile it
+ * collapses to a hidden field, so the form is exactly as it was before
+ * profiles existed.
+ *
+ * Rendered as its own step above the credential fields: picking a profile
+ * decides *which* settings are being edited, so it is not a sibling of them.
+ * "New profile" is one of the options rather than a separate field, so there
+ * is only ever one answer to "which profile is this?".
+ */
+const profileStep = (profiles: ProfileChoice[], selected: string, manageUrl?: string): string => {
+	if (profiles.length === 0) {
+		return `<input type="hidden" name="profileId" value="${escapeHtml(selected)}">`;
+	}
+
+	const current = profiles.find((p) => p.id === selected)?.label ?? 'Default';
+
+	const actions = (p: ProfileChoice) => {
+		if (!manageUrl) {
+			return '';
+		}
+
+		const base = `${manageUrl}${manageUrl.includes('?') ? '&' : '?'}profile=${encodeURIComponent(p.id)}`;
+		// The default profile is the fallback for everything else, so it cannot
+		// be deleted — offering the link would only produce an error.
+		const remove = p.id === DEFAULT_PROFILE_ID
+			? ''
+			: `<a href="${escapeHtml(`${base}&action=delete`)}">delete</a>`;
+		return `<span class="opt-actions"><a href="${escapeHtml(`${base}&action=rename`)}">rename</a>${remove}</span>`;
+	};
+
+	const options = profiles.map((p) => `<label class="opt">
+<input type="radio" name="profileId" value="${escapeHtml(p.id)}"${p.id === selected ? ' checked' : ''}>
+<span class="opt-name">${escapeHtml(p.label)}</span>
+${actions(p)}
+</label>`).join('\n');
+
+	return `<details class="step">
+<summary><span class="step-label">Profile</span><span class="step-value">${escapeHtml(current)}</span><span class="step-toggle"></span></summary>
+<div class="opts">
+${options}
+<label class="opt">
+<input type="radio" name="profileId" value="${NEW_PROFILE_OPTION}">
+<span class="opt-name">+ New profile</span>
+</label>
+<input class="new-name" name="newProfileLabel" type="text" placeholder="Name for the new profile">
+</div>
+</details>`;
+};
+
 export const renderParamsForm = (
 	params: EnvParam[],
 	sessionId: string,
 	existingValues?: Record<string, string>,
+	profiles: ProfileChoice[] = [],
+	selectedProfile = 'default',
+	manageUrl?: string,
 ): string => `${pageHead('Configure')}
 <body>
 <h1>Configure</h1>
-<p class="msg">Enter your credentials to complete setup.</p>
+<p class="msg">${describeConfigureIntent(params.length > 0, profiles.length > 0)}</p>
 <form method="POST">
 <input type="hidden" name="session" value="${escapeHtml(sessionId)}">
+${profileStep(profiles, selectedProfile, manageUrl)}
 ${paramFields(params, existingValues)}
 <button type="submit">save &amp; continue</button>
 </form>
 ${footerHtml}
 </body></html>`;
+
+const describeConfigureIntent = (hasParams: boolean, hasChoice: boolean): string => {
+	if (hasParams && hasChoice) {
+		return 'Choose a profile, then enter its credentials.';
+	}
+
+	if (hasChoice) {
+		return 'Choose which profile this connection uses.';
+	}
+
+	return 'Enter your credentials to complete setup.';
+};
 
 export const renderLandingPage = (installUrl: string, showSignIn: boolean): string => `${pageHead('mcp-auth-wrapper')}
 <body>
@@ -77,18 +185,69 @@ export const renderReconfigurePage = (
 	token: string,
 	existingValues: Record<string, string>,
 	saved?: boolean,
-): string => `${pageHead('Reconfigure')}
+	profiles: ProfileChoice[] = [],
+	activeProfile = DEFAULT_PROFILE_ID,
+	renaming?: string,
+): string => {
+	// Renaming replaces the form entirely: it is a different edit from changing
+	// credentials, and showing both at once invites saving the wrong one.
+	if (renaming) {
+		const label = profiles.find((p) => p.id === renaming)?.label ?? '';
+		return `${pageHead('Rename profile')}
+<body>
+<h1>Rename profile</h1>
+<p class="msg">Choose a new name for this profile.</p>
+<form method="POST">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<input type="hidden" name="renameProfile" value="${escapeHtml(renaming)}">
+<label for="renameTo">Name</label>
+<input id="renameTo" name="renameTo" type="text" value="${escapeHtml(label)}">
+<button type="submit">save</button>
+</form>
+${footerHtml}
+</body></html>`;
+	}
+
+	const active = profiles.find((p) => p.id === activeProfile)?.label;
+
+	return `${pageHead('Reconfigure')}
 <body>
 <h1>Reconfigure</h1>
 ${saved ? '<div class="banner">Settings saved. New configuration will be used on the next request.</div>' : ''}
-<p class="msg">Update your credentials below.</p>
+<p class="msg">${active && profiles.length > 1
+	? `Editing the <strong>${escapeHtml(active)}</strong> profile — the one this connection uses.`
+	: 'Update your credentials below.'}</p>
 <form method="POST">
 <input type="hidden" name="token" value="${escapeHtml(token)}">
 ${paramFields(params, existingValues)}
 <button type="submit">save</button>
 </form>
+${profiles.length > 1 ? renderProfileList(profiles, activeProfile, token) : ''}
 ${footerHtml}
 </body></html>`;
+};
+
+/**
+ * Profiles other than the one being edited, so they can be renamed or removed
+ * without first connecting a client to them.
+ */
+const renderProfileList = (profiles: ProfileChoice[], activeProfile: string, token: string): string => {
+	const rows = profiles.map((p) => {
+		const base = `/reconfigure?token=${encodeURIComponent(token)}&profile=${encodeURIComponent(p.id)}`;
+		const remove = p.id === DEFAULT_PROFILE_ID
+			? ''
+			: `<a href="${escapeHtml(`${base}&action=delete`)}">delete</a>`;
+		return `<div class="opt">
+<span class="opt-name">${escapeHtml(p.label)}${p.id === activeProfile ? ' <span class="step-label">in use here</span>' : ''}</span>
+<span class="opt-actions"><a href="${escapeHtml(`${base}&action=rename`)}">rename</a>${remove}</span>
+</div>`;
+	}).join('\n');
+
+	return `<div class="step" style="margin-top:40px">
+<div class="step-label" style="padding:12px 14px 4px">Your profiles</div>
+<div class="opts">${rows}</div>
+</div>`;
+};
 
 function escapeHtml(s: string): string {
 	return s

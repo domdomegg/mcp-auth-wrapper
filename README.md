@@ -120,6 +120,24 @@ Users can update their per-user env vars at any time via a **reconfigure** tool 
 
 Each spawned server process also receives an `MCP_USER_ID` environment variable set to the authenticated user's identity (the `auth.userClaim` value, `sub` by default). Servers can use this to key per-user state — for example, a distinct storage directory per user. It is set after `envBase`/`envPerUser`, so it cannot be overridden by a user-supplied value.
 
+### Profiles
+
+One identity often needs more than one account on the same upstream — a personal and a work Google account, or a second WhatsApp for an agent acting on your behalf. A **profile** is one such account: it holds its own `envPerUser` values and gets its own server process.
+
+Every user starts with a single profile named `default`, which behaves exactly as before profiles existed. Additional ones are created from the Configure screen shown while connecting a client.
+
+Each connecting OAuth client is **bound** to one profile, chosen when the client is authorized and keyed on its client id. Clients bound to the same profile share a process; only a deliberate second profile starts a second one.
+
+Spawned processes receive `MCP_PROFILE_ID` alongside `MCP_USER_ID`. Servers that want per-account storage should use **both**, as separate path segments:
+
+```
+store/<MCP_USER_ID>/<MCP_PROFILE_ID>
+```
+
+Do not concatenate them into one string before sanitising it — sanitising a joined key can destroy the separator, and two distinct accounts then collapse into one. For the same reason, prefer encoding (e.g. base64url behind a marker outside your safe character set) over replacing unsafe characters: replacement is not injective, so `adam@x.com` and `adam.x.com` would otherwise share a directory.
+
+Deleting a profile moves any clients bound to it back to the default; the default itself cannot be deleted.
+
 <details>
 <summary>Advanced: scaling and persistence</summary>
 
@@ -289,6 +307,21 @@ By default, users enter their own credentials (e.g. API keys) via a form during 
 Users are matched by the `auth.userClaim` (default: `sub`) from the login token. Inline storage is read-only — users cannot update their own credentials.
 
 </details>
+
+## Upgrading to 2.0
+
+2.0 adds [profiles](#profiles). Existing configuration is migrated automatically — params stored against a user become a profile named `default`, and clients that connected before profiles resolve to it — so no action is needed for the wrapper itself.
+
+The breaking change is for **spawned servers**, which now also receive `MCP_PROFILE_ID`. A server that keys storage on `MCP_USER_ID` alone keeps working, but will share one store between a user's profiles, which defeats the point. To support profiles, use both as separate path segments:
+
+```
+store/<MCP_USER_ID>/<MCP_PROFILE_ID>
+```
+
+Two things to get right when adopting it:
+
+- **Migrate existing data into the default profile's directory.** Everyone has a default profile, so the new segment moves every existing session down a level. Without a migration, a server that stores a login there finds an empty directory and behaves as though it is being set up for the first time. Move the old contents in on first run rather than exempting the default profile from the path scheme — an exemption is permanent, and leaves the default living somewhere different from every other profile forever.
+- **Encode each segment separately.** Sanitising a joined key can destroy the separator, merging two accounts; and replacing unsafe characters is not injective, so `adam@x.com` and `adam.x.com` collide.
 
 ## Contributing
 

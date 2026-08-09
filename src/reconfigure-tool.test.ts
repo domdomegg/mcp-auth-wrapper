@@ -13,7 +13,8 @@ const reconfigureUrl = 'http://localhost:3000/reconfigure?token=abc';
 
 const makeDeps = (overrides: {upsertThrows?: boolean} = {}) => {
 	const store = {
-		upsertUser: overrides.upsertThrows
+		getProfile: vi.fn(() => ({id: 'default', label: 'Default', params: {}})),
+		upsertProfile: overrides.upsertThrows
 			? vi.fn(() => {
 				throw new Error('read-only');
 			})
@@ -24,6 +25,7 @@ const makeDeps = (overrides: {upsertThrows?: boolean} = {}) => {
 		store: store as any,
 		pool: pool as any,
 		userId: 'adam',
+		profileId: 'default',
 		envPerUser,
 		reconfigureUrl,
 		mocks: {store, pool},
@@ -67,15 +69,15 @@ describe('handleReconfigureCall', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: 'my-key', REGION: 'us-east'}, deps);
 		expect(result.structuredContent).toEqual({status: 'updated', message: expect.any(String)});
-		expect(deps.mocks.store.upsertUser).toHaveBeenCalledWith('adam', {API_KEY: 'my-key', REGION: 'us-east'});
-		expect(deps.mocks.pool.invalidateUser).toHaveBeenCalledWith('adam');
+		expect(deps.mocks.store.upsertProfile).toHaveBeenCalledWith('adam', 'default', 'Default', {API_KEY: 'my-key', REGION: 'us-east'});
+		expect(deps.mocks.pool.invalidateUser).toHaveBeenCalledWith('adam', 'default');
 	});
 
 	test('updates with partial args (only some params provided)', () => {
 		const deps = makeDeps();
 		const result = handleReconfigureCall({API_KEY: 'my-key'}, deps);
 		expect(result.structuredContent).toHaveProperty('status', 'updated');
-		expect(deps.mocks.store.upsertUser).toHaveBeenCalledWith('adam', {API_KEY: 'my-key'});
+		expect(deps.mocks.store.upsertProfile).toHaveBeenCalledWith('adam', 'default', 'Default', {API_KEY: 'my-key'});
 	});
 
 	test('falls back to URL mode when storage is read-only', () => {
@@ -100,6 +102,6 @@ describe('handleReconfigureCall', () => {
 		const result = handleReconfigureCall({API_KEY: 'ok', NOPE: 'bad'}, deps);
 		expect(result.isError).toBe(true);
 		expect(result.structuredContent).toHaveProperty('error', 'Unknown parameter(s): NOPE');
-		expect(deps.mocks.store.upsertUser).not.toHaveBeenCalled();
+		expect(deps.mocks.store.upsertProfile).not.toHaveBeenCalled();
 	});
 });

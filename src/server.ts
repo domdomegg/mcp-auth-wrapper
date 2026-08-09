@@ -14,13 +14,16 @@ import type {OAuthClientInformationFull} from '@modelcontextprotocol/sdk/shared/
 import type {AuthorizationParams} from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import {mcpAuthRouter, getOAuthProtectedResourceMetadataUrl} from '@modelcontextprotocol/sdk/server/auth/router.js';
 import {requireBearerAuth} from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import {randomUUID} from 'node:crypto';
 import express from 'express';
 import type {WrapperOAuthProvider} from './oauth-provider.js';
 import type {OidcClient} from './auth.js';
-import type {Store} from './store.js';
+import {DEFAULT_PROFILE_ID, type Store} from './store.js';
 import type {ProcessPool} from './process-pool.js';
 import type {WrapperConfig} from './types.js';
-import {renderLandingPage, renderParamsForm, renderReconfigurePage} from './pages.js';
+import {
+	NEW_PROFILE_OPTION, renderLandingPage, renderParamsForm, renderReconfigurePage,
+} from './pages.js';
 import {RECONFIGURE_TOOL_NAME, getReconfigureTool, handleReconfigureCall} from './reconfigure-tool.js';
 
 /** Safely extract a string from a parsed form body (may be string, array, or undefined) */
@@ -34,6 +37,7 @@ const createProxyServer = (
 	config: WrapperConfig,
 	baseUrl: string,
 	accessToken: string,
+	clientId?: string,
 ): Server => {
 	const server = new Server(
 		{name: 'mcp-auth-wrapper', version: '1.0.0'},
@@ -43,9 +47,13 @@ const createProxyServer = (
 	const envPerUser = config.envPerUser ?? [];
 	const hasParams = envPerUser.length > 0;
 	const reconfigureUrl = `${baseUrl}/reconfigure?token=${accessToken}`;
+	// Which of the user's accounts this client talks to. Resolved from the
+	// binding written when the connection was authorized; unbound clients get
+	// the default, which is every client that predates profiles.
+	const profileId = store.resolveProfileId(userId, clientId);
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		const result = await client.listTools();
 
 		if (hasParams) {
@@ -60,12 +68,12 @@ const createProxyServer = (
 			return handleReconfigureCall(
 				request.params.arguments ?? {},
 				{
-					store, pool, userId, envPerUser, reconfigureUrl,
+					store, pool, userId, profileId, envPerUser, reconfigureUrl,
 				},
 			);
 		}
 
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.callTool({
 			name: request.params.name,
 			arguments: request.params.arguments,
@@ -73,24 +81,24 @@ const createProxyServer = (
 	});
 
 	server.setRequestHandler(ListResourcesRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.listResources();
 	});
 
 	server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.readResource({
 			uri: request.params.uri,
 		});
 	});
 
 	server.setRequestHandler(ListPromptsRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.listPrompts();
 	});
 
 	server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.getPrompt({
 			name: request.params.name,
 			arguments: request.params.arguments,
@@ -200,16 +208,15 @@ export const createApp = (
 			const callbackUrl = `${baseUrl}/callback`;
 			const {userId} = await oidcClient.exchangeCode(code, callbackUrl, pending.upstreamCodeVerifier);
 
-			// Show the params form if envPerUser is configured and storage is writable,
-			// so users can review/update their configuration on re-auth (e.g. via a Reconfigure flow).
-			// Skip if storage is inline (read-only) and user already has all params.
-			const existingParams = store.getUser(userId);
+			// Configure covers both credentials and profile selection. The profile
+			// part applies even to a server declaring no params, and cannot be
+			// gated on already having a choice: creating the second profile
+			// happens on this very screen, so requiring two means nobody reaches
+			// it and every connection silently takes the default. Inline storage
+			// is read-only, so there is nothing to configure.
 			const isInlineStorage = typeof config.storage === 'object';
-			const needsParams = config.envPerUser
-				&& config.envPerUser.length > 0
-				&& !(isInlineStorage && existingParams && config.envPerUser.every((p) => existingParams[p.name]));
 
-			if (needsParams) {
+			if (!isInlineStorage) {
 				// Re-seal with userId attached so /params can use it
 				pending.userId = userId;
 				const newSealedState = provider.sealState(pending);
@@ -217,11 +224,8 @@ export const createApp = (
 				return;
 			}
 
-			// User is fully configured — if not in store yet, create empty entry
-			if (!existingParams) {
-				store.upsertUser(userId, {});
-			}
-
+			// Only inline storage reaches here, and it is read-only — its users
+			// are declared in config, so there is nothing to create.
 			const {redirectUrl} = provider.completeAuthorization(pending, userId);
 			res.redirect(redirectUrl);
 		} catch (err) {
@@ -231,9 +235,13 @@ export const createApp = (
 	});
 
 	// Landing page
-	const hasEnvPerUser = (config.envPerUser ?? []).length > 0;
 	const isInlineStorage = typeof config.storage === 'object';
-	const showSignIn = hasEnvPerUser && !isInlineStorage;
+	// Signing in is also worth offering when a server declares no params at all:
+	// profiles are managed from the same page, and whatsapp — which needs a QR
+	// scan rather than a credential — is exactly such a server. Gating on
+	// envPerUser alone left it with no way in, so the sign-in link was absent
+	// and /login 404'd.
+	const showSignIn = !isInlineStorage;
 
 	app.get('/', (_req, res) => {
 		const installUrl = `https://adamjones.me/install-mcp/?url=${encodeURIComponent(mcpUrl.href)}`;
@@ -301,8 +309,14 @@ export const createApp = (
 			return;
 		}
 
-		const existingValues = store.getUser(pending.userId);
-		res.send(renderParamsForm(config.envPerUser ?? [], sealedSession, existingValues));
+		const selected = store.resolveProfileId(pending.userId, pending.clientId);
+		// Flag profiles already serving another connection, so it is obvious when
+		// picking one would share settings rather than start somewhere clean.
+		const boundElsewhere = new Set(store.listBoundProfileIds(pending.userId, pending.clientId));
+		const profiles = store.listProfiles(pending.userId)
+			.map((p) => ({id: p.id, label: p.label, inUse: boundElsewhere.has(p.id)}));
+		const existingValues = store.getProfile(pending.userId, selected)?.params;
+		res.send(renderParamsForm(config.envPerUser ?? [], sealedSession, existingValues, profiles, selected));
 	});
 
 	app.post('/params', express.urlencoded({extended: false}), (req, res) => {
@@ -326,8 +340,37 @@ export const createApp = (
 			}
 		}
 
-		store.upsertUser(pending.userId, params);
-		pool.invalidateUser(pending.userId);
+		// The picker is one control: either an existing profile is selected, or
+		// the "new profile" option is, in which case the name field applies.
+		const chosen = getString(req.body.profileId) ?? DEFAULT_PROFILE_ID;
+		const isNew = chosen === NEW_PROFILE_OPTION;
+		// Empty rather than undefined when the name field is left blank, which is
+		// the normal case for picking an existing profile. `||` not `??`: an
+		// empty string must fall through, or it overwrites the existing label —
+		// which is how the default profile ended up nameless.
+		const newProfileLabel = getString(req.body.newProfileLabel)?.trim() || undefined;
+
+		if (isNew && !newProfileLabel) {
+			res.status(400).send('Please name the new profile');
+			return;
+		}
+
+		// Random, not a millisecond timestamp: two profiles created in the same
+		// millisecond — or one double-submitted form — collided, and upsert's
+		// ON CONFLICT silently overwrote the first one's params.
+		const profileId = isNew ? `p${randomUUID()}` : chosen;
+		const label = newProfileLabel
+			|| store.getProfile(pending.userId, profileId)?.label
+			|| 'Default';
+
+		store.upsertProfile(pending.userId, profileId, label, params);
+		// Bind this client, so every later request from it resolves here without
+		// asking again.
+		if (pending.clientId) {
+			store.setBinding(pending.userId, pending.clientId, profileId);
+		}
+
+		pool.invalidateUser(pending.userId, profileId);
 
 		const {redirectUrl} = provider.completeAuthorization(pending, pending.userId);
 		res.redirect(redirectUrl);
@@ -349,8 +392,34 @@ export const createApp = (
 				return;
 			}
 
-			const existingValues = store.getUser(userId) ?? {};
-			res.send(renderReconfigurePage(config.envPerUser ?? [], token, existingValues));
+			// Edits apply to the profile this client is bound to, not to the
+			// user — params live on profiles, so writing to the user row would
+			// silently leave the running configuration unchanged.
+			const profileId = store.resolveProfileId(userId, authInfo.clientId);
+			const action = getString(req.query.action);
+			const target = getString(req.query.profile);
+
+			if (action === 'delete' && target) {
+				try {
+					store.deleteProfile(userId, target);
+					pool.invalidateUser(userId, target);
+				} catch (error) {
+					res.status(400).send(error instanceof Error ? error.message : 'Cannot delete that profile');
+					return;
+				}
+			}
+
+			const profiles = store.listProfiles(userId);
+			const existingValues = store.getProfile(userId, profileId)?.params ?? {};
+			res.send(renderReconfigurePage(
+				config.envPerUser ?? [],
+				token,
+				existingValues,
+				false,
+				profiles,
+				profileId,
+				action === 'rename' ? target : undefined,
+			));
 		} catch {
 			res.status(401).send('Invalid or expired token');
 		}
@@ -379,10 +448,34 @@ export const createApp = (
 				}
 			}
 
-			store.upsertUser(userId, params);
-			pool.invalidateUser(userId);
+			const profileId = store.resolveProfileId(userId, authInfo.clientId);
+			const existing = store.getProfile(userId, profileId);
+			// A rename arrives with the same form; keep the params untouched when
+			// only the label changed.
+			const renameTo = getString(req.body.renameTo)?.trim();
+			const target = getString(req.body.renameProfile);
 
-			res.send(renderReconfigurePage(config.envPerUser ?? [], token, params, true));
+			if (renameTo && target) {
+				const profile = store.getProfile(userId, target);
+				if (profile) {
+					store.upsertProfile(userId, target, renameTo, profile.params);
+				}
+			} else {
+				// `||`, so a label that is somehow empty is replaced rather than
+				// carried forward.
+				store.upsertProfile(userId, profileId, existing?.label || 'Default', params);
+				pool.invalidateUser(userId, profileId);
+			}
+
+			const saved = store.getProfile(userId, profileId)?.params ?? params;
+			res.send(renderReconfigurePage(
+				config.envPerUser ?? [],
+				token,
+				saved,
+				true,
+				store.listProfiles(userId),
+				profileId,
+			));
 		} catch {
 			res.status(401).send('Invalid or expired token');
 		}
@@ -403,9 +496,11 @@ export const createApp = (
 
 		const accessToken = req.auth!.token;
 
-		// Check if user has params configured
-		const userParams = store.getUser(userId);
-		if (!userParams) {
+		// Configured means "the bound profile exists", not "the legacy user row
+		// exists" — that row is only written for the default profile, so a user
+		// whose first act was creating a named profile was locked out entirely.
+		const bound = store.resolveProfileId(userId, req.auth!.clientId);
+		if (!store.getProfile(userId, bound)) {
 			res.status(403).json({error: 'User not configured. Please reconfigure via the reconfigure tool.'});
 			return;
 		}
@@ -415,7 +510,7 @@ export const createApp = (
 			enableJsonResponse: true,
 		});
 
-		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken);
+		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken, req.auth!.clientId);
 		await server.connect(transport as unknown as Transport);
 
 		await transport.handleRequest(req, res);

@@ -45,6 +45,9 @@ type PoolInternals = {
 	processes: Map<string, {transport: {pid: number | null; onerror?: (err: Error) => void}}>;
 };
 
+// Children are keyed on (userId, profileId), joined with a NUL.
+const key = (userId: string, profileId = 'default') => `${userId}\0${profileId}`;
+
 describe('ProcessPool', () => {
 	let store: Store;
 	let pool: ProcessPool;
@@ -63,7 +66,7 @@ describe('ProcessPool', () => {
 		await pool.getClient('adam');
 
 		const internals = pool as unknown as PoolInternals;
-		const entry = internals.processes.get('adam');
+		const entry = internals.processes.get(key('adam'));
 		expect(entry).toBeDefined();
 		const {pid} = entry!.transport;
 		expect(pid).not.toBeNull();
@@ -75,21 +78,21 @@ describe('ProcessPool', () => {
 		entry!.transport.onerror?.(new Error('synthetic transport error'));
 
 		expect(await waitForExit(pid!)).toBe(true);
-		expect(internals.processes.has('adam')).toBe(false);
+		expect(internals.processes.has(key('adam'))).toBe(false);
 	}, 15_000);
 
 	test('terminates the child process when the user is invalidated', async () => {
 		await pool.getClient('adam');
 
 		const internals = pool as unknown as PoolInternals;
-		const {pid} = internals.processes.get('adam')!.transport;
+		const {pid} = internals.processes.get(key('adam'))!.transport;
 		expect(pid).not.toBeNull();
 		expect(isAlive(pid!)).toBe(true);
 
 		pool.invalidateUser('adam');
 
 		expect(await waitForExit(pid!)).toBe(true);
-		expect(internals.processes.has('adam')).toBe(false);
+		expect(internals.processes.has(key('adam'))).toBe(false);
 	}, 15_000);
 
 	test('injects the authenticated userId into the child as MCP_USER_ID', async () => {
