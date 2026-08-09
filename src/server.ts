@@ -17,7 +17,7 @@ import {requireBearerAuth} from '@modelcontextprotocol/sdk/server/auth/middlewar
 import express from 'express';
 import type {WrapperOAuthProvider} from './oauth-provider.js';
 import type {OidcClient} from './auth.js';
-import type {Store} from './store.js';
+import {DEFAULT_PROFILE_ID, type Store} from './store.js';
 import type {ProcessPool} from './process-pool.js';
 import type {WrapperConfig} from './types.js';
 import {renderLandingPage, renderParamsForm, renderReconfigurePage} from './pages.js';
@@ -34,6 +34,7 @@ const createProxyServer = (
 	config: WrapperConfig,
 	baseUrl: string,
 	accessToken: string,
+	clientId?: string,
 ): Server => {
 	const server = new Server(
 		{name: 'mcp-auth-wrapper', version: '1.0.0'},
@@ -43,9 +44,13 @@ const createProxyServer = (
 	const envPerUser = config.envPerUser ?? [];
 	const hasParams = envPerUser.length > 0;
 	const reconfigureUrl = `${baseUrl}/reconfigure?token=${accessToken}`;
+	// Which of the user's accounts this client talks to. Resolved from the
+	// binding written when the connection was authorized; unbound clients get
+	// the default, which is every client that predates profiles.
+	const profileId = store.resolveProfileId(userId, clientId);
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		const result = await client.listTools();
 
 		if (hasParams) {
@@ -65,7 +70,7 @@ const createProxyServer = (
 			);
 		}
 
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.callTool({
 			name: request.params.name,
 			arguments: request.params.arguments,
@@ -73,24 +78,24 @@ const createProxyServer = (
 	});
 
 	server.setRequestHandler(ListResourcesRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.listResources();
 	});
 
 	server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.readResource({
 			uri: request.params.uri,
 		});
 	});
 
 	server.setRequestHandler(ListPromptsRequestSchema, async () => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.listPrompts();
 	});
 
 	server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-		const client = await pool.getClient(userId);
+		const client = await pool.getClient(userId, profileId);
 		return client.getPrompt({
 			name: request.params.name,
 			arguments: request.params.arguments,
@@ -209,7 +214,13 @@ export const createApp = (
 				&& config.envPerUser.length > 0
 				&& !(isInlineStorage && existingParams && config.envPerUser.every((p) => existingParams[p.name]));
 
-			if (needsParams) {
+			// Also show it when there is a profile to pick, even for a server that
+			// asks for no params at all. Without this a connection silently binds
+			// to the default profile — which for a deliberate second account is
+			// the wrong one, and the user is never asked.
+			const hasProfileChoice = !isInlineStorage && store.listProfiles(userId).length > 1;
+
+			if (needsParams || hasProfileChoice) {
 				// Re-seal with userId attached so /params can use it
 				pending.userId = userId;
 				const newSealedState = provider.sealState(pending);
@@ -301,8 +312,10 @@ export const createApp = (
 			return;
 		}
 
-		const existingValues = store.getUser(pending.userId);
-		res.send(renderParamsForm(config.envPerUser ?? [], sealedSession, existingValues));
+		const profiles = store.listProfiles(pending.userId);
+		const selected = store.resolveProfileId(pending.userId, pending.clientId);
+		const existingValues = store.getProfile(pending.userId, selected)?.params;
+		res.send(renderParamsForm(config.envPerUser ?? [], sealedSession, existingValues, profiles, selected));
 	});
 
 	app.post('/params', express.urlencoded({extended: false}), (req, res) => {
@@ -326,8 +339,24 @@ export const createApp = (
 			}
 		}
 
-		store.upsertUser(pending.userId, params);
-		pool.invalidateUser(pending.userId);
+		// A new profile is named by the user; otherwise they picked an existing
+		// one, or there was only the default to fall back to.
+		const newProfileLabel = getString(req.body.newProfileLabel)?.trim();
+		const profileId = newProfileLabel
+			? `p${Date.now().toString(36)}`
+			: getString(req.body.profileId) ?? DEFAULT_PROFILE_ID;
+		const label = newProfileLabel
+			?? store.getProfile(pending.userId, profileId)?.label
+			?? 'Default';
+
+		store.upsertProfile(pending.userId, profileId, label, params);
+		// Bind this client, so every later request from it resolves here without
+		// asking again.
+		if (pending.clientId) {
+			store.setBinding(pending.userId, pending.clientId, profileId);
+		}
+
+		pool.invalidateUser(pending.userId, profileId);
 
 		const {redirectUrl} = provider.completeAuthorization(pending, pending.userId);
 		res.redirect(redirectUrl);
@@ -415,7 +444,9 @@ export const createApp = (
 			enableJsonResponse: true,
 		});
 
-		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken);
+		// From the wrapper's own sealed token, so a client cannot claim to be
+		// bound to a profile it was not given.
+		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken, req.auth!.clientId);
 		await server.connect(transport as unknown as Transport);
 
 		await transport.handleRequest(req, res);

@@ -120,6 +120,24 @@ Users can update their per-user env vars at any time via a **reconfigure** tool 
 
 Each spawned server process also receives an `MCP_USER_ID` environment variable set to the authenticated user's identity (the `auth.userClaim` value, `sub` by default). Servers can use this to key per-user state — for example, a distinct storage directory per user. It is set after `envBase`/`envPerUser`, so it cannot be overridden by a user-supplied value.
 
+### Profiles
+
+One identity often needs more than one account on the same upstream — a personal and a work Google account, or a second WhatsApp for an agent acting on your behalf. A **profile** is one such account: it holds its own `envPerUser` values and gets its own server process.
+
+Every user starts with a single profile named `default`, which behaves exactly as before profiles existed. Additional ones are created from the Configure screen shown while connecting a client.
+
+Each connecting OAuth client is **bound** to one profile. The binding is made when the client is authorized and keyed on the client id this wrapper issued, so a client cannot select a profile for itself — the same property that makes `MCP_USER_ID` trustworthy. Clients bound to the same profile share a process; only a deliberate second profile starts a second one.
+
+Spawned processes receive `MCP_PROFILE_ID` alongside `MCP_USER_ID`. Servers that want per-account storage should use **both**, as separate path segments:
+
+```
+store/<MCP_USER_ID>/<MCP_PROFILE_ID>
+```
+
+Do not concatenate them into one string before sanitising it — sanitising a joined key can destroy the separator, and two distinct accounts then collapse into one. For the same reason, prefer encoding (e.g. base64url behind a marker outside your safe character set) over replacing unsafe characters: replacement is not injective, so `adam@x.com` and `adam.x.com` would otherwise share a directory.
+
+Deleting a profile moves any clients bound to it back to the default; the default itself cannot be deleted.
+
 <details>
 <summary>Advanced: scaling and persistence</summary>
 

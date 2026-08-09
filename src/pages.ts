@@ -47,16 +47,43 @@ const paramFields = (params: EnvParam[], existingValues?: Record<string, string>
 ${p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : ''}
 <input id="${escapeHtml(p.name)}" name="${escapeHtml(p.name)}" type="${p.secret ? 'password' : 'text'}" value="${escapeHtml(existingValues?.[p.name] ?? '')}">`).join('\n');
 
+export type ProfileChoice = {id: string; label: string};
+
+/**
+ * Lets one identity hold several accounts on the same upstream. Only rendered
+ * when there is genuinely a choice — with a single profile it collapses to a
+ * hidden field, so the form looks exactly as it did before profiles existed.
+ */
+const profileField = (profiles: ProfileChoice[], selected: string): string => {
+	if (profiles.length <= 1) {
+		return `<input type="hidden" name="profileId" value="${escapeHtml(selected)}">`;
+	}
+
+	const options = profiles.map((p) => `<option value="${escapeHtml(p.id)}"${p.id === selected ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('\n');
+
+	return `<label for="profileId">Profile</label>
+<div class="desc">Which of your accounts this connection uses.</div>
+<select id="profileId" name="profileId">
+${options}
+</select>
+<label for="newProfileLabel">Or create a new one</label>
+<div class="desc">Give it a name to create a new profile instead of using the one above.</div>
+<input id="newProfileLabel" name="newProfileLabel" type="text" placeholder="e.g. Work">`;
+};
+
 export const renderParamsForm = (
 	params: EnvParam[],
 	sessionId: string,
 	existingValues?: Record<string, string>,
+	profiles: ProfileChoice[] = [],
+	selectedProfile = 'default',
 ): string => `${pageHead('Configure')}
 <body>
 <h1>Configure</h1>
-<p class="msg">Enter your credentials to complete setup.</p>
+<p class="msg">${params.length > 0 ? 'Enter your credentials to complete setup.' : 'Confirm which account this connection uses.'}</p>
 <form method="POST">
 <input type="hidden" name="session" value="${escapeHtml(sessionId)}">
+${profileField(profiles, selectedProfile)}
 ${paramFields(params, existingValues)}
 <button type="submit">save &amp; continue</button>
 </form>
