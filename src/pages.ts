@@ -1,3 +1,4 @@
+import {DEFAULT_PROFILE_ID} from './store.js';
 import type {EnvParam} from './types.js';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS module, can't use import.meta
@@ -30,17 +31,30 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   input:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
   /* Profile picker. Radios rather than a select: a native dropdown's option
      list is OS chrome that cannot be styled, and one control with one
-     selection leaves no ambiguity about which profile is being used. */
-  .step { border: 1px solid var(--input-border); border-radius: 4px; padding: 4px 0; margin-bottom: 28px; }
-  .step-head { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 10px 14px 6px; }
-  .opt { display: flex; align-items: baseline; gap: 10px; padding: 8px 14px; cursor: pointer; }
+     selection leaves no ambiguity about which profile is being used.
+     Collapsed by default — the common case is not changing profile. */
+  .step { border: 1px solid var(--input-border); border-radius: 4px; margin-bottom: 28px; }
+  .step > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: baseline; gap: 8px; }
+  .step > summary::-webkit-details-marker { display: none; }
+  .step-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .step-value { font-size: 13px; }
+  .step-toggle { margin-left: auto; font-size: 11px; color: var(--subtle); }
+  .step[open] > summary { border-bottom: 1px solid var(--input-border); }
+  .step[open] .step-toggle::after { content: 'close'; }
+  .step:not([open]) .step-toggle::after { content: 'change'; }
+  .opts { padding: 4px 0; }
+  .opt { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer; }
   .opt:hover { background: var(--input-bg); }
-  .opt input[type=radio] { width: auto; margin: 0; accent-color: var(--fg); flex: none; }
+  /* Drawn by hand: accent-color alone leaves the unselected ring nearly
+     invisible against a dark background. */
+  .opt input[type=radio] { appearance: none; width: 14px; height: 14px; flex: none; margin: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; position: relative; }
+  .opt input[type=radio]:checked { border-color: var(--fg); }
+  .opt input[type=radio]:checked::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--fg); }
   .opt-name { font-size: 13px; }
-  .opt-note { font-size: 11px; color: var(--subtle); margin-left: auto; }
-  .new-name { margin: 0 14px 10px 36px; width: calc(100% - 50px); }
-  .manage { font-size: 11px; color: var(--subtle); padding: 4px 14px 10px; }
-  .manage a { color: var(--subtle); }
+  .opt-actions { margin-left: auto; display: flex; gap: 12px; }
+  .opt-actions a { font-size: 11px; color: var(--subtle); text-decoration: none; border-bottom: 1px solid var(--input-border); }
+  .opt-actions a:hover { color: var(--fg); }
+  .new-name { margin: 0 14px 12px 38px; width: calc(100% - 52px); }
   button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
   button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
@@ -81,22 +95,39 @@ const profileStep = (profiles: ProfileChoice[], selected: string, manageUrl?: st
 		return `<input type="hidden" name="profileId" value="${escapeHtml(selected)}">`;
 	}
 
+	const current = profiles.find((p) => p.id === selected)?.label ?? 'Default';
+
+	const actions = (p: ProfileChoice) => {
+		if (!manageUrl) {
+			return '';
+		}
+
+		const base = `${manageUrl}${manageUrl.includes('?') ? '&' : '?'}profile=${encodeURIComponent(p.id)}`;
+		// The default profile is the fallback for everything else, so it cannot
+		// be deleted — offering the link would only produce an error.
+		const remove = p.id === DEFAULT_PROFILE_ID
+			? ''
+			: `<a href="${escapeHtml(`${base}&action=delete`)}">delete</a>`;
+		return `<span class="opt-actions"><a href="${escapeHtml(`${base}&action=rename`)}">rename</a>${remove}</span>`;
+	};
+
 	const options = profiles.map((p) => `<label class="opt">
 <input type="radio" name="profileId" value="${escapeHtml(p.id)}"${p.id === selected ? ' checked' : ''}>
 <span class="opt-name">${escapeHtml(p.label)}</span>
-${p.inUse ? '<span class="opt-note">in use elsewhere</span>' : ''}
+${actions(p)}
 </label>`).join('\n');
 
-	return `<div class="step">
-<div class="step-head">Profile</div>
+	return `<details class="step">
+<summary><span class="step-label">Profile</span><span class="step-value">${escapeHtml(current)}</span><span class="step-toggle"></span></summary>
+<div class="opts">
 ${options}
 <label class="opt">
-<input type="radio" name="profileId" value="__new__">
+<input type="radio" name="profileId" value="${NEW_PROFILE_OPTION}">
 <span class="opt-name">+ New profile</span>
 </label>
 <input class="new-name" name="newProfileLabel" type="text" placeholder="Name for the new profile">
-${manageUrl ? `<div class="manage"><a href="${escapeHtml(manageUrl)}">Rename or delete profiles</a></div>` : ''}
-</div>`;
+</div>
+</details>`;
 };
 
 export const renderParamsForm = (
