@@ -42,19 +42,25 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .step[open] > summary { border-bottom: 1px solid var(--input-border); }
   .step[open] .step-toggle::after { content: 'close'; }
   .step:not([open]) .step-toggle::after { content: 'change'; }
-  .opts { padding: 4px 0; }
+  .opts { padding: 4px 0; display: flex; flex-direction: column; }
   .opt { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer; }
   .opt:hover { background: var(--input-bg); }
   /* Drawn by hand: accent-color alone leaves the unselected ring nearly
      invisible against a dark background. */
-  .opt input[type=radio] { appearance: none; width: 14px; height: 14px; flex: none; margin: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; position: relative; }
+  .opt input[type=radio] { appearance: none; width: 14px; height: 14px; flex: none; margin: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; display: grid; place-content: center; }
   .opt input[type=radio]:checked { border-color: var(--fg); }
-  .opt input[type=radio]:checked::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--fg); }
+  /* Centred by the grid rather than by insets, which ignore the border and
+     leave the dot a pixel off. */
+  .opt input[type=radio]::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+  .opt input[type=radio]:checked::after { background: var(--fg); }
   .opt-name { font-size: 13px; }
   .opt-actions { margin-left: auto; display: flex; gap: 12px; }
   .opt-actions a { font-size: 11px; color: var(--subtle); text-decoration: none; border-bottom: 1px solid var(--input-border); }
   .opt-actions a:hover { color: var(--fg); }
-  .new-name { margin: 0 14px 12px 38px; width: calc(100% - 52px); }
+  /* block + auto margins fills the space left over, without the arithmetic:
+     width:100% with margins overflows, and width:auto on an input falls back
+     to its intrinsic size rather than stretching. */
+  .new-name { display: block; margin: 0 14px 12px 38px; width: unset; min-width: 0; align-self: stretch; }
   button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
   button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
