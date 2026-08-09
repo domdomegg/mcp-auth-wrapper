@@ -220,7 +220,11 @@ export const createApp = (
 			// asks for no params at all. Without this a connection silently binds
 			// to the default profile — which for a deliberate second account is
 			// the wrong one, and the user is never asked.
-			const hasProfileChoice = !isInlineStorage && store.listProfiles(userId).length > 1;
+			// Not "has more than one profile": creating the second one happens on
+			// this screen, so gating on already having two means nobody ever gets
+			// there. A connection then binds silently to the default — which is
+			// how whatsapp-claube ended up pointing at Adam's own account.
+			const hasProfileChoice = !isInlineStorage;
 
 			if (needsParams || hasProfileChoice) {
 				// Re-seal with userId attached so /params can use it

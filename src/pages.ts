@@ -43,11 +43,12 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .step[open] .step-toggle::after { content: 'close'; }
   .step:not([open]) .step-toggle::after { content: 'change'; }
   .opts { padding: 4px 0; display: flex; flex-direction: column; }
-  .opt { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer; }
+  .opt { display: flex; align-items: center; gap: 10px; padding: 4px 14px; cursor: pointer; }
   .opt:hover { background: var(--input-bg); }
   /* Drawn by hand: accent-color alone leaves the unselected ring nearly
-     invisible against a dark background. */
-  .opt input[type=radio] { appearance: none; width: 14px; height: 14px; flex: none; margin: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; display: grid; place-content: center; }
+     invisible against a dark background. Pinned square by min-width and
+     aspect-ratio — the surrounding flex row otherwise stretches it oval. */
+  .opt input[type=radio] { appearance: none; width: 14px; min-width: 14px; height: 14px; aspect-ratio: 1; flex: 0 0 14px; margin: 0; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; display: grid; place-content: center; }
   .opt input[type=radio]:checked { border-color: var(--fg); }
   /* Centred by the grid rather than by insets, which ignore the border and
      leave the dot a pixel off. */
@@ -97,7 +98,7 @@ export const NEW_PROFILE_OPTION = '__new__';
  * is only ever one answer to "which profile is this?".
  */
 const profileStep = (profiles: ProfileChoice[], selected: string, manageUrl?: string): string => {
-	if (profiles.length <= 1) {
+	if (profiles.length === 0) {
 		return `<input type="hidden" name="profileId" value="${escapeHtml(selected)}">`;
 	}
 
@@ -146,7 +147,7 @@ export const renderParamsForm = (
 ): string => `${pageHead('Configure')}
 <body>
 <h1>Configure</h1>
-<p class="msg">${describeConfigureIntent(params.length > 0, profiles.length > 1)}</p>
+<p class="msg">${describeConfigureIntent(params.length > 0, profiles.length > 0)}</p>
 <form method="POST">
 <input type="hidden" name="session" value="${escapeHtml(sessionId)}">
 ${profileStep(profiles, selectedProfile, manageUrl)}
