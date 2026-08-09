@@ -244,9 +244,13 @@ export const createApp = (
 	});
 
 	// Landing page
-	const hasEnvPerUser = (config.envPerUser ?? []).length > 0;
 	const isInlineStorage = typeof config.storage === 'object';
-	const showSignIn = hasEnvPerUser && !isInlineStorage;
+	// Signing in is also worth offering when a server declares no params at all:
+	// profiles are managed from the same page, and whatsapp — which needs a QR
+	// scan rather than a credential — is exactly such a server. Gating on
+	// envPerUser alone left it with no way in, so the sign-in link was absent
+	// and /login 404'd.
+	const showSignIn = !isInlineStorage;
 
 	app.get('/', (_req, res) => {
 		const installUrl = `https://adamjones.me/install-mcp/?url=${encodeURIComponent(mcpUrl.href)}`;
