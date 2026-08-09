@@ -510,9 +510,6 @@ export const createApp = (
 			enableJsonResponse: true,
 		});
 
-		// From the wrapper's own sealed token. Separates profiles within one
-		// identity; it is not a trust boundary between parties — see the
-		// profiles section of the README.
 		const server = createProxyServer(pool, store, userId, config, baseUrl, accessToken, req.auth!.clientId);
 		await server.connect(transport as unknown as Transport);
 

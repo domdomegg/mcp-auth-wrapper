@@ -48,12 +48,6 @@ export class Store {
 		`);
 
 		// Which profile a given OAuth client talks to.
-		//
-		// Note this is an organisational boundary, not a security one: client ids
-		// are accepted as presented rather than checked against a registry, so
-		// within one identity a client that knows another of its client ids can
-		// reach that profile. userId, which comes from the verified upstream
-		// token, is what actually separates users.
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS bindings (
 				user_id TEXT NOT NULL,
