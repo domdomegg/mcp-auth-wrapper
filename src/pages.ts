@@ -43,7 +43,9 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .step[open] .step-toggle::after { content: 'close'; }
   .step:not([open]) .step-toggle::after { content: 'change'; }
   .opts { padding: 4px 0; display: flex; flex-direction: column; }
-  .opt { display: flex; align-items: center; gap: 10px; padding: 4px 14px; cursor: pointer; }
+  /* The rows are labels, so the global label margins apply and stack 24px
+     between them on top of this padding. Reset explicitly. */
+  .opt { display: flex; align-items: center; gap: 10px; padding: 9px 14px; margin: 0; cursor: pointer; }
   .opt:hover { background: var(--input-bg); }
   /* Drawn by hand: accent-color alone leaves the unselected ring nearly
      invisible against a dark background. Pinned square by min-width and
