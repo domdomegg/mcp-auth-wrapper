@@ -20,7 +20,9 @@ import type {OidcClient} from './auth.js';
 import {DEFAULT_PROFILE_ID, type Store} from './store.js';
 import type {ProcessPool} from './process-pool.js';
 import type {WrapperConfig} from './types.js';
-import {renderLandingPage, renderParamsForm, renderReconfigurePage} from './pages.js';
+import {
+	NEW_PROFILE_OPTION, renderLandingPage, renderParamsForm, renderReconfigurePage,
+} from './pages.js';
 import {RECONFIGURE_TOOL_NAME, getReconfigureTool, handleReconfigureCall} from './reconfigure-tool.js';
 
 /** Safely extract a string from a parsed form body (may be string, array, or undefined) */
@@ -312,8 +314,12 @@ export const createApp = (
 			return;
 		}
 
-		const profiles = store.listProfiles(pending.userId);
 		const selected = store.resolveProfileId(pending.userId, pending.clientId);
+		// Flag profiles already serving another connection, so it is obvious when
+		// picking one would share settings rather than start somewhere clean.
+		const boundElsewhere = new Set(store.listBoundProfileIds(pending.userId, pending.clientId));
+		const profiles = store.listProfiles(pending.userId)
+			.map((p) => ({id: p.id, label: p.label, inUse: boundElsewhere.has(p.id)}));
 		const existingValues = store.getProfile(pending.userId, selected)?.params;
 		res.send(renderParamsForm(config.envPerUser ?? [], sealedSession, existingValues, profiles, selected));
 	});
@@ -339,12 +345,18 @@ export const createApp = (
 			}
 		}
 
-		// A new profile is named by the user; otherwise they picked an existing
-		// one, or there was only the default to fall back to.
+		// The picker is one control: either an existing profile is selected, or
+		// the "new profile" option is, in which case the name field applies.
+		const chosen = getString(req.body.profileId) ?? DEFAULT_PROFILE_ID;
+		const isNew = chosen === NEW_PROFILE_OPTION;
 		const newProfileLabel = getString(req.body.newProfileLabel)?.trim();
-		const profileId = newProfileLabel
-			? `p${Date.now().toString(36)}`
-			: getString(req.body.profileId) ?? DEFAULT_PROFILE_ID;
+
+		if (isNew && !newProfileLabel) {
+			res.status(400).send('Please name the new profile');
+			return;
+		}
+
+		const profileId = isNew ? `p${Date.now().toString(36)}` : chosen;
 		const label = newProfileLabel
 			?? store.getProfile(pending.userId, profileId)?.label
 			?? 'Default';

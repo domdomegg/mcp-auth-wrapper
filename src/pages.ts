@@ -26,10 +26,21 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .banner { font-size: 12px; padding: 10px 14px; border: 1px solid var(--banner-border); border-radius: 4px; margin-bottom: 20px; background: var(--banner-bg); color: var(--banner-fg); }
   label { display: block; font-size: 12px; font-weight: 500; margin-top: 20px; margin-bottom: 4px; }
   .desc { font-size: 11px; color: var(--subtle); margin-bottom: 4px; }
-  input, select { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
-  input:focus, select:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
-  /* Native select chrome ignores the colours above, so draw our own arrow. */
-  select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
+  input { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
+  input:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
+  /* Profile picker. Radios rather than a select: a native dropdown's option
+     list is OS chrome that cannot be styled, and one control with one
+     selection leaves no ambiguity about which profile is being used. */
+  .step { border: 1px solid var(--input-border); border-radius: 4px; padding: 4px 0; margin-bottom: 28px; }
+  .step-head { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 10px 14px 6px; }
+  .opt { display: flex; align-items: baseline; gap: 10px; padding: 8px 14px; cursor: pointer; }
+  .opt:hover { background: var(--input-bg); }
+  .opt input[type=radio] { width: auto; margin: 0; accent-color: var(--fg); flex: none; }
+  .opt-name { font-size: 13px; }
+  .opt-note { font-size: 11px; color: var(--subtle); margin-left: auto; }
+  .new-name { margin: 0 14px 10px 36px; width: calc(100% - 50px); }
+  .manage { font-size: 11px; color: var(--subtle); padding: 4px 14px 10px; }
+  .manage a { color: var(--subtle); }
   button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
   button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
@@ -49,28 +60,43 @@ const paramFields = (params: EnvParam[], existingValues?: Record<string, string>
 ${p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : ''}
 <input id="${escapeHtml(p.name)}" name="${escapeHtml(p.name)}" type="${p.secret ? 'password' : 'text'}" value="${escapeHtml(existingValues?.[p.name] ?? '')}">`).join('\n');
 
-export type ProfileChoice = {id: string; label: string};
+export type ProfileChoice = {id: string; label: string; inUse?: boolean};
+
+/** Radio value meaning "create one", so the picker stays a single control. */
+export const NEW_PROFILE_OPTION = '__new__';
 
 /**
- * Lets one identity hold several accounts on the same upstream. Only rendered
- * when there is genuinely a choice — with a single profile it collapses to a
- * hidden field, so the form looks exactly as it did before profiles existed.
+ * Lets one identity keep several separate configurations of the same server.
+ * Only rendered when there is genuinely a choice — with a single profile it
+ * collapses to a hidden field, so the form is exactly as it was before
+ * profiles existed.
+ *
+ * Rendered as its own step above the credential fields: picking a profile
+ * decides *which* settings are being edited, so it is not a sibling of them.
+ * "New profile" is one of the options rather than a separate field, so there
+ * is only ever one answer to "which profile is this?".
  */
-const profileField = (profiles: ProfileChoice[], selected: string): string => {
+const profileStep = (profiles: ProfileChoice[], selected: string, manageUrl?: string): string => {
 	if (profiles.length <= 1) {
 		return `<input type="hidden" name="profileId" value="${escapeHtml(selected)}">`;
 	}
 
-	const options = profiles.map((p) => `<option value="${escapeHtml(p.id)}"${p.id === selected ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('\n');
+	const options = profiles.map((p) => `<label class="opt">
+<input type="radio" name="profileId" value="${escapeHtml(p.id)}"${p.id === selected ? ' checked' : ''}>
+<span class="opt-name">${escapeHtml(p.label)}</span>
+${p.inUse ? '<span class="opt-note">in use elsewhere</span>' : ''}
+</label>`).join('\n');
 
-	return `<label for="profileId">Profile</label>
-<div class="desc">Which of your accounts this connection uses.</div>
-<select id="profileId" name="profileId">
+	return `<div class="step">
+<div class="step-head">Profile</div>
 ${options}
-</select>
-<label for="newProfileLabel">Or create a new one</label>
-<div class="desc">Give it a name to create a new profile instead of using the one above.</div>
-<input id="newProfileLabel" name="newProfileLabel" type="text" placeholder="e.g. Work">`;
+<label class="opt">
+<input type="radio" name="profileId" value="__new__">
+<span class="opt-name">+ New profile</span>
+</label>
+<input class="new-name" name="newProfileLabel" type="text" placeholder="Name for the new profile">
+${manageUrl ? `<div class="manage"><a href="${escapeHtml(manageUrl)}">Rename or delete profiles</a></div>` : ''}
+</div>`;
 };
 
 export const renderParamsForm = (
@@ -79,18 +105,31 @@ export const renderParamsForm = (
 	existingValues?: Record<string, string>,
 	profiles: ProfileChoice[] = [],
 	selectedProfile = 'default',
+	manageUrl?: string,
 ): string => `${pageHead('Configure')}
 <body>
 <h1>Configure</h1>
-<p class="msg">${params.length > 0 ? 'Enter your credentials to complete setup.' : 'Confirm which account this connection uses.'}</p>
+<p class="msg">${describeConfigureIntent(params.length > 0, profiles.length > 1)}</p>
 <form method="POST">
 <input type="hidden" name="session" value="${escapeHtml(sessionId)}">
-${profileField(profiles, selectedProfile)}
+${profileStep(profiles, selectedProfile, manageUrl)}
 ${paramFields(params, existingValues)}
 <button type="submit">save &amp; continue</button>
 </form>
 ${footerHtml}
 </body></html>`;
+
+const describeConfigureIntent = (hasParams: boolean, hasChoice: boolean): string => {
+	if (hasParams && hasChoice) {
+		return 'Choose a profile, then enter its credentials.';
+	}
+
+	if (hasChoice) {
+		return 'Choose which profile this connection uses.';
+	}
+
+	return 'Enter your credentials to complete setup.';
+};
 
 export const renderLandingPage = (installUrl: string, showSignIn: boolean): string => `${pageHead('mcp-auth-wrapper')}
 <body>

@@ -126,6 +126,13 @@ export class Store {
 		return row?.profile_id;
 	}
 
+	/** Profiles already bound to some other client of this user. */
+	listBoundProfileIds(userId: string, exceptClientId?: string): string[] {
+		const rows = this.db.prepare('SELECT DISTINCT profile_id FROM bindings WHERE user_id = ? AND client_id IS NOT ?').all(userId, exceptClientId ?? null) as {profile_id: string}[];
+
+		return rows.map((row) => row.profile_id);
+	}
+
 	setBinding(userId: string, clientId: string, profileId: string): void {
 		this.assertWritable();
 		this.db.prepare(`
