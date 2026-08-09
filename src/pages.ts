@@ -26,8 +26,10 @@ const STYLES = `@media (prefers-color-scheme: light) { :root { ${VARS_LIGHT} } }
   .banner { font-size: 12px; padding: 10px 14px; border: 1px solid var(--banner-border); border-radius: 4px; margin-bottom: 20px; background: var(--banner-bg); color: var(--banner-fg); }
   label { display: block; font-size: 12px; font-weight: 500; margin-top: 20px; margin-bottom: 4px; }
   .desc { font-size: 11px; color: var(--subtle); margin-bottom: 4px; }
-  input { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
-  input:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
+  input, select { font: inherit; font-size: 13px; width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 4px; background: var(--input-bg); color: var(--fg); }
+  input:focus, select:focus { border-color: var(--input-focus); border-width: 2px; padding: 7px 9px; outline: none; }
+  /* Native select chrome ignores the colours above, so draw our own arrow. */
+  select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
   button, .btn { display: inline-block; margin-top: 24px; font: inherit; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; background: var(--btn-bg); color: var(--btn-fg); text-decoration: none; }
   button:hover, .btn:hover { background: var(--btn-hover); }
   footer { margin-top: 48px; font-size: 10px; color: var(--footer); }
