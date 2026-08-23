@@ -47,12 +47,18 @@ npx -y mcp-auth-wrapper
 docker run -e 'MCP_AUTH_WRAPPER_CONFIG={"command":["npx","-y","airtable-mcp-server"],"auth":{"issuer":"https://auth.example.com"}}' -p 3000:3000 ghcr.io/domdomegg/mcp-auth-wrapper
 ```
 
+There is also a Bun-based image, `ghcr.io/domdomegg/mcp-auth-wrapper:bun` (and `<version>-bun`), which uses noticeably less memory. It has no node or npx, so start the inner server with `bunx` instead:
+
+```bash
+docker run -e 'MCP_AUTH_WRAPPER_CONFIG={"command":["bunx","airtable-mcp-server"],"auth":{"issuer":"https://auth.example.com"}}' -p 3000:3000 ghcr.io/domdomegg/mcp-auth-wrapper:bun
+```
+
 </details>
 
 <details>
 <summary>Running on Kubernetes</summary>
 
-The Docker image runs as the non-root `node` user (uid 1000). If you use a PersistentVolumeClaim for SQLite storage, the volume mount will be owned by root by default, so the container won't be able to write to it. Add `fsGroup: 1000` to the pod's security context to fix this:
+The Docker image runs as a non-root user (uid 1000; `node` in the default image, `bun` in the bun image). If you use a PersistentVolumeClaim for SQLite storage, the volume mount will be owned by root by default, so the container won't be able to write to it. Add `fsGroup: 1000` to the pod's security context to fix this:
 
 ```yaml
 spec:

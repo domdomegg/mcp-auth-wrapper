@@ -1,0 +1,28 @@
+# Bun variant of the image: same wrapper, smaller runtime footprint.
+#
+# There is no node/npx in here, so the inner server in MCP_AUTH_WRAPPER_CONFIG
+# must be started with bunx, e.g. "command": ["bunx", "airtable-mcp-server"].
+FROM oven/bun:1-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN bun install --frozen-lockfile
+
+COPY . .
+RUN bun run build
+
+FROM oven/bun:1-alpine
+
+WORKDIR /app
+
+COPY --from=builder /app/package.json /app/package-lock.json ./
+RUN bun install --frozen-lockfile --production
+
+COPY --from=builder /app/dist /app/dist/
+
+USER bun
+
+EXPOSE 3000
+
+ENTRYPOINT ["bun", "dist/index.js"]
