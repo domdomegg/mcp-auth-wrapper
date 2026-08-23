@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import {createServer} from 'node:http';
 import {loadConfig} from './config.js';
+import {listen} from './listen.js';
 import {Store} from './store.js';
 import {OidcClient} from './auth.js';
 import {WrapperOAuthProvider} from './oauth-provider.js';
@@ -34,13 +36,12 @@ const main = async () => {
 	const app = createApp(config, pool, provider, oidcClient, store);
 
 	const port = config.port ?? 3000;
-	const host = config.host ?? '0.0.0.0';
-	const server = app.listen(port, host, () => {
-		console.log(`mcp-auth-wrapper listening on ${host}:${port}`);
-		console.log(`Wrapping: ${config.command.join(' ')}`);
-		console.log(`Auth: ${config.auth.issuer}`);
-		console.log(`Storage: ${typeof config.storage === 'string' ? config.storage : 'inline'}`);
-	});
+	const server = createServer(app);
+	const host = await listen(server, port, config.host);
+	console.log(`mcp-auth-wrapper listening on ${host}:${port}`);
+	console.log(`Wrapping: ${config.command.join(' ')}`);
+	console.log(`Auth: ${config.auth.issuer}`);
+	console.log(`Storage: ${typeof config.storage === 'string' ? config.storage : 'inline'}`);
 
 	const shutdown = async () => {
 		console.log('\nShutting down...');

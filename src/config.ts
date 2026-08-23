@@ -56,7 +56,7 @@ export const parseConfig = (json: string): WrapperConfig => {
 		envBase: raw.envBase,
 		envPerUser: raw.envPerUser,
 		port: raw.port ?? 3000,
-		host: raw.host ?? '0.0.0.0',
+		host: raw.host ?? undefined,
 		issuerUrl: raw.issuerUrl,
 		secret: raw.secret,
 	};

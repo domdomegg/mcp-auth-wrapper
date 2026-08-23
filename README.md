@@ -112,6 +112,7 @@ A full example:
 | `envPerUser` | No | Per-user env vars to collect during first login (e.g. API keys). Each has `name`, `label`, optional `description` and `secret`. |
 | `storage` | No | Where to store user params: `"memory"` (default), a SQLite file path, or an inline object (see [below](#other-examples)). |
 | `port` | No | Port to listen on. Defaults to `3000`. |
+| `host` | No | Host to bind to. Defaults to `"::"` (IPv6 + IPv4); falls back to `"0.0.0.0"` only if the host has no IPv6. |
 | `host` | No | Host to bind to. Defaults to `0.0.0.0`. |
 | `issuerUrl` | No | Public URL of this server. Required when behind a reverse proxy. |
 | `secret` | No | Signing key for tokens. Random if not set. Set a fixed value to survive restarts. |
