@@ -6,6 +6,7 @@ import type {OAuthClientInformationFull, OAuthTokenRevocationRequest, OAuthToken
 import type {AuthorizationParams, OAuthServerProvider} from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import type {OAuthRegisteredClientsStore} from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import type {AuthInfo} from '@modelcontextprotocol/sdk/server/auth/types.js';
+import {InvalidTokenError} from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type {OidcClient} from './auth.js';
 import type {WrapperConfig} from './types.js';
 
@@ -277,7 +278,11 @@ export class WrapperOAuthProvider implements OAuthServerProvider {
 	async verifyAccessToken(token: string): Promise<AuthInfo> {
 		const td = unseal<TokenPayload>(token, this.key);
 		if (!td || td.type !== 'access') {
-			throw new Error('Invalid or expired access token');
+			// An OAuthError, so the bearer middleware answers 401 invalid_token.
+			// A plain Error here became a 500 "server_error", which clients such
+			// as mcp-aggregator cannot tell from a broken upstream — so instead
+			// of refreshing their token they surfaced the failure.
+			throw new InvalidTokenError('Invalid or expired access token');
 		}
 
 		return {

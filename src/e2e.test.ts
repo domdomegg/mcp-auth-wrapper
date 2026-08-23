@@ -338,8 +338,10 @@ describe('unauthenticated requests', () => {
 				jsonrpc: '2.0', method: 'initialize', id: 1, params: {protocolVersion: '2025-03-26', capabilities: {}, clientInfo: {name: 'test', version: '1.0.0'}},
 			}),
 		});
-		// Should be 401 (or 500 if bearer auth middleware throws unhandled)
-		expect(res.ok).toBe(false);
+		// 401 specifically: a garbage or expired token must read as an auth
+		// failure to the caller, not as a server error.
+		expect(res.status).toBe(401);
+		expect(res.headers.get('www-authenticate')).toContain('invalid_token');
 	});
 });
 
