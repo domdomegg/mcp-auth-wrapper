@@ -56,8 +56,7 @@ export const parseConfig = (json: string): WrapperConfig => {
 		envBase: raw.envBase,
 		envPerUser: raw.envPerUser,
 		port: raw.port ?? 3000,
-		// Undefined means dual-stack by default; see listen.ts.
-		host: raw.host,
+		host: raw.host ?? undefined,
 		issuerUrl: raw.issuerUrl,
 		secret: raw.secret,
 	};
