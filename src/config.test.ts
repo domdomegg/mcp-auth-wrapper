@@ -20,7 +20,7 @@ test('loads valid config with defaults', () => {
 	expect(config.auth.clientId).toBe('my-client');
 	expect(config.storage).toBe('memory');
 	expect(config.port).toBe(3000);
-	expect(config.host).toBe('0.0.0.0');
+	expect(config.host).toBeUndefined();
 });
 
 test('defaults clientId to mcp-auth-wrapper', () => {
