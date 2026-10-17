@@ -94,3 +94,9 @@ test('rejects envPerUser without name', () => {
 test('rejects envPerUser without label', () => {
 	expect(() => loadConfig(JSON.stringify({...baseConfig, envPerUser: [{name: 'KEY'}]}))).toThrow('label');
 });
+
+test('allowedRedirectUris', () => {
+	expect(loadConfig(JSON.stringify(baseConfig)).allowedRedirectUris).toBeUndefined();
+	expect(loadConfig(JSON.stringify({...baseConfig, allowedRedirectUris: ['https://a.example/cb']})).allowedRedirectUris).toEqual(['https://a.example/cb']);
+	expect(() => loadConfig(JSON.stringify({...baseConfig, allowedRedirectUris: 'https://a.example/cb'}))).toThrow('allowedRedirectUris');
+});

@@ -171,6 +171,15 @@ const describeConfigureIntent = (hasParams: boolean, hasChoice: boolean): string
 	return 'Enter your credentials to complete setup.';
 };
 
+export const renderRedirectConfirmPage = (clientRedirectUrl: string, untrustedHost: string): string => `${pageHead('Confirm access')}
+<body>
+<h1>mcp-auth-wrapper</h1>
+<p class="msg">This will give <strong>${escapeHtml(untrustedHost)}</strong> access to this server as you.</p>
+<p class="msg">Only continue if you started this sign-in yourself and you recognise this address. If someone sent you a link, close this page.</p>
+<a class="btn" href="${escapeHtml(clientRedirectUrl)}">continue to ${escapeHtml(untrustedHost)}</a>
+${footerHtml}
+</body></html>`;
+
 export const renderLandingPage = (installUrl: string, showSignIn: boolean): string => `${pageHead('mcp-auth-wrapper')}
 <body>
 <h1>mcp-auth-wrapper</h1>

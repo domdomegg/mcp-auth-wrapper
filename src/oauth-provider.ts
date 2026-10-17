@@ -204,7 +204,9 @@ export class WrapperOAuthProvider implements OAuthServerProvider {
 
 	// Note: we don't validate redirect_uri here. OAuth 2.1 requires it, but since we
 	// don't enforce client registration (any client_id + redirect_uri is accepted), there's
-	// nothing meaningful to check against. PKCE prevents code interception regardless.
+	// nothing meaningful to check against. PKCE stops others intercepting a code, but not an
+	// attacker who started the flow themselves: that's handled before the code is issued
+	// (see redirect-uri.ts).
 	async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string): Promise<OAuthTokens> {
 		const ac = unseal<AuthCodePayload>(authorizationCode, this.key);
 		if (!ac) {

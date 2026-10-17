@@ -43,6 +43,10 @@ export const parseConfig = (json: string): WrapperConfig => {
 		}
 	}
 
+	if (raw.allowedRedirectUris !== undefined && (!Array.isArray(raw.allowedRedirectUris) || !raw.allowedRedirectUris.every((u: unknown) => typeof u === 'string'))) {
+		throw new Error('Config "allowedRedirectUris" must be an array of strings');
+	}
+
 	return {
 		command: raw.command,
 		auth: {
@@ -59,6 +63,7 @@ export const parseConfig = (json: string): WrapperConfig => {
 		host: raw.host ?? undefined,
 		issuerUrl: raw.issuerUrl,
 		secret: raw.secret,
+		allowedRedirectUris: raw.allowedRedirectUris,
 	};
 };
 
