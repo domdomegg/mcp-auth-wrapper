@@ -24,4 +24,9 @@ export type WrapperConfig = {
 	host?: string;
 	issuerUrl?: string;
 	secret?: string;
+	/**
+	 * Hosted client redirect URIs trusted without a confirmation step (loopback and native app URIs always are).
+	 * Defaults to well-known hosted client callbacks (Claude, ChatGPT, vscode.dev, Cursor; see `src/redirect-uri.ts`); setting this replaces the defaults. A trailing `*` matches any suffix.
+	 */
+	allowedRedirectUris?: string[];
 };

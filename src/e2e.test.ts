@@ -315,6 +315,73 @@ describe('OAuth discovery', () => {
 	});
 });
 
+// Helper: start an authorization with the given redirect_uri, submitting the params form if
+// shown, and return the response that hands the code over (a redirect or the confirm page)
+const authorizeWith = async (redirectUri: string): Promise<Response> => {
+	const authorizeUrl = new URL(`${wrapperUrl}/authorize`);
+	authorizeUrl.searchParams.set('client_id', 'any-client');
+	authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+	authorizeUrl.searchParams.set('response_type', 'code');
+	authorizeUrl.searchParams.set('code_challenge', generatePkce().codeChallenge);
+	authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+	let res = await fetch(authorizeUrl.toString(), {redirect: 'manual'});
+	for (;;) {
+		const location = res.headers.get('location');
+		if (location?.startsWith(redirectUri)) {
+			return res;
+		}
+
+		if (location) {
+			res = await fetch(new URL(location, wrapperUrl), {redirect: 'manual'}); // eslint-disable-line no-await-in-loop
+			continue;
+		}
+
+		const html = await res.clone().text(); // eslint-disable-line no-await-in-loop
+		const sessionMatch = /name="session"\s+value="([^"]+)"/.exec(html);
+		if (res.status !== 200 || !sessionMatch) {
+			return res;
+		}
+
+		res = await fetch(`${wrapperUrl}/params`, { // eslint-disable-line no-await-in-loop
+			method: 'POST',
+			headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+			body: new URLSearchParams({session: sessionMatch[1]!, TEST_USER: 'u', SECRET_KEY: 's'}).toString(),
+			redirect: 'manual',
+		});
+	}
+};
+
+describe('redirect URI checks', () => {
+	test.each([
+		// eslint-disable-next-line no-script-url
+		'javascript:alert(1)//',
+		'data:text/html,hi',
+		'not a url',
+	])('rejects %s', async (redirectUri) => {
+		const res = await authorizeWith(redirectUri);
+		expect(res.status).toBe(400);
+	});
+
+	test.each([
+		'http://localhost:9999/callback',
+		'https://claude.ai/api/mcp/auth_callback',
+	])('redirects straight to trusted %s', async (redirectUri) => {
+		const res = await authorizeWith(redirectUri);
+		expect(res.status).toBe(302);
+		expect(new URL(res.headers.get('location')!).searchParams.get('code')).toBeTruthy();
+	});
+
+	test('asks before handing a code to an untrusted redirect URI', async () => {
+		const res = await authorizeWith('https://attacker.example/cb');
+		expect(res.status).toBe(200);
+		expect(res.headers.get('x-frame-options')).toBe('DENY');
+		const html = await res.text();
+		expect(html).toContain('This will give <strong>attacker.example</strong> access');
+		expect(html).toContain('href="https://attacker.example/cb?code=');
+	});
+});
+
 describe('unauthenticated requests', () => {
 	test('rejects /mcp without token with 401', async () => {
 		const res = await fetch(`${wrapperUrl}/mcp`, {

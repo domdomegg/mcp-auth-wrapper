@@ -21,8 +21,9 @@ import type {OidcClient} from './auth.js';
 import {DEFAULT_PROFILE_ID, type Store} from './store.js';
 import type {ProcessPool} from './process-pool.js';
 import type {WrapperConfig} from './types.js';
+import {checkRedirectUri} from './redirect-uri.js';
 import {
-	NEW_PROFILE_OPTION, renderLandingPage, renderParamsForm, renderReconfigurePage,
+	NEW_PROFILE_OPTION, renderLandingPage, renderParamsForm, renderReconfigurePage, renderRedirectConfirmPage,
 } from './pages.js';
 import {RECONFIGURE_TOOL_NAME, getReconfigureTool, handleReconfigureCall} from './reconfigure-tool.js';
 
@@ -120,6 +121,19 @@ export const createApp = (
 	const issuerUrl = new URL(baseUrl);
 	const mcpUrl = new URL('/mcp', issuerUrl);
 
+	// The redirect_uri is attacker-controllable (see redirect-uri.ts), so name it before handing over the code
+	const sendCodeToClient = (res: express.Response, pending: NonNullable<ReturnType<WrapperOAuthProvider['unsealState']>>, userId: string) => {
+		const {redirectUrl} = provider.completeAuthorization(pending, userId);
+		if (checkRedirectUri(pending.redirectUri, config.allowedRedirectUris) !== 'needs_consent') {
+			res.redirect(redirectUrl);
+			return;
+		}
+
+		res.set('X-Frame-Options', 'DENY');
+		res.set('Content-Security-Policy', 'frame-ancestors \'none\'');
+		res.send(renderRedirectConfirmPage(redirectUrl, new URL(pending.redirectUri).host));
+	};
+
 	// Custom /authorize handler — accepts any client_id and redirect_uri without
 	// requiring prior registration. The SDK's built-in handler validates these against
 	// a client registry, which we don't need. PKCE is still enforced.
@@ -140,6 +154,11 @@ export const createApp = (
 
 		if (codeChallengeMethod && codeChallengeMethod !== 'S256') {
 			res.status(400).json({error: 'invalid_request', error_description: 'code_challenge_method must be S256'});
+			return;
+		}
+
+		if (checkRedirectUri(redirectUri, config.allowedRedirectUris) === 'invalid') {
+			res.status(400).json({error: 'invalid_request', error_description: 'Invalid redirect_uri'});
 			return;
 		}
 
@@ -226,8 +245,7 @@ export const createApp = (
 
 			// Only inline storage reaches here, and it is read-only — its users
 			// are declared in config, so there is nothing to create.
-			const {redirectUrl} = provider.completeAuthorization(pending, userId);
-			res.redirect(redirectUrl);
+			sendCodeToClient(res, pending, userId);
 		} catch (err) {
 			console.error('Callback error:', err);
 			res.status(500).send('Authentication failed');
@@ -372,8 +390,7 @@ export const createApp = (
 
 		pool.invalidateUser(pending.userId, profileId);
 
-		const {redirectUrl} = provider.completeAuthorization(pending, pending.userId);
-		res.redirect(redirectUrl);
+		sendCodeToClient(res, pending, pending.userId);
 	});
 
 	// Reconfigure page (auth via access token in URL)
